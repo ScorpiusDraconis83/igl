@@ -20,11 +20,7 @@ typedef void CAEAGLLayer;
 #include <igl/opengl/GLIncludes.h>
 #include <igl/opengl/PlatformDevice.h>
 
-namespace igl {
-namespace opengl {
-class TextureTarget;
-
-namespace ios {
+namespace igl::opengl::ios {
 
 class Device;
 
@@ -38,6 +34,7 @@ class PlatformDevice final : public opengl::PlatformDevice {
   std::shared_ptr<ITexture> createTextureFromNativeDrawable(CAEAGLLayer* nativeDrawable,
                                                             Result* outResult);
   std::shared_ptr<ITexture> createTextureFromNativeDepth(CAEAGLLayer* nativeDrawable,
+                                                         TextureFormat depthTextureFormat,
                                                          Result* outResult);
 
   Size getNativeDrawableSize(CAEAGLLayer* nativeDrawable, Result* outResult);
@@ -93,9 +90,7 @@ class PlatformDevice final : public opengl::PlatformDevice {
   CVOpenGLESTextureCacheRef getTextureCache();
 
  protected:
-  bool isType(PlatformDeviceType t) const noexcept override;
+  [[nodiscard]] bool isType(PlatformDeviceType t) const noexcept override;
 };
 
-} // namespace ios
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl::ios

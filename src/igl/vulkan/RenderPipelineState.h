@@ -13,15 +13,13 @@
 #include <igl/vulkan/RenderPipelineReflection.h>
 #include <unordered_map>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 class Device;
 
 /// @brief This class stores all mutable pipeline parameters as member variables and serves as a
 /// hash key for the `RenderPipelineState` class
 class alignas(sizeof(uint64_t)) RenderPipelineDynamicState {
-  uint32_t topology_ : 4;
   uint32_t depthCompareOp_ : 3;
 
   // Ignore modernize-use-default-member-init
@@ -63,7 +61,6 @@ class alignas(sizeof(uint64_t)) RenderPipelineDynamicState {
   RenderPipelineDynamicState() {
     // memset makes sure all padding bits are zero
     std::memset(this, 0, sizeof(*this));
-    topology_ = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
     // depth and stencil default state values should be based on DepthStencilStateDesc and
     // StencilStateDesc in graphics/igl/src/igl/DepthStencilState.h
     depthCompareOp_ = VK_COMPARE_OP_ALWAYS;
@@ -80,37 +77,28 @@ class alignas(sizeof(uint64_t)) RenderPipelineDynamicState {
     depthWriteEnable_ = false;
   }
 
-  VkPrimitiveTopology getTopology() const {
-    return static_cast<VkPrimitiveTopology>(topology_);
-  }
-
-  void setTopology(VkPrimitiveTopology topology) {
-    IGL_ASSERT_MSG((topology & 0xF) == topology, "Invalid VkPrimitiveTopology.");
-    topology_ = topology & 0xF;
-  }
-
-  VkCompareOp getDepthCompareOp() const {
+  [[nodiscard]] VkCompareOp getDepthCompareOp() const {
     return static_cast<VkCompareOp>(depthCompareOp_);
   }
 
   void setDepthCompareOp(VkCompareOp depthCompareOp) {
-    IGL_ASSERT_MSG((depthCompareOp & 0x7) == depthCompareOp, "Invalid VkCompareOp for depth.");
+    IGL_DEBUG_ASSERT((depthCompareOp & 0x7) == depthCompareOp, "Invalid VkCompareOp for depth.");
     depthCompareOp_ = depthCompareOp & 0x7;
   }
 
-  VkStencilOp getStencilStateFailOp(bool front) const {
+  [[nodiscard]] VkStencilOp getStencilStateFailOp(bool front) const {
     return static_cast<VkStencilOp>(front ? stencilFrontFailOp_ : stencilBackFailOp_);
   }
 
-  VkStencilOp getStencilStatePassOp(bool front) const {
+  [[nodiscard]] VkStencilOp getStencilStatePassOp(bool front) const {
     return static_cast<VkStencilOp>(front ? stencilFrontPassOp_ : stencilBackPassOp_);
   }
 
-  VkStencilOp getStencilStateDepthFailOp(bool front) const {
+  [[nodiscard]] VkStencilOp getStencilStateDepthFailOp(bool front) const {
     return static_cast<VkStencilOp>(front ? stencilFrontDepthFailOp_ : stencilBackDepthFailOp_);
   }
 
-  VkCompareOp getStencilStateCompareOp(bool front) const {
+  [[nodiscard]] VkCompareOp getStencilStateCompareOp(bool front) const {
     return static_cast<VkCompareOp>(front ? stencilFrontCompareOp_ : stencilBackCompareOp_);
   }
 
@@ -119,10 +107,10 @@ class alignas(sizeof(uint64_t)) RenderPipelineDynamicState {
                           VkStencilOp passOp,
                           VkStencilOp depthFailOp,
                           VkCompareOp compareOp) {
-    IGL_ASSERT_MSG((failOp & 0x7) == failOp, "Invalid VkStencilOp for stencil fail.");
-    IGL_ASSERT_MSG((passOp & 0x7) == passOp, "Invalid VkStencilOp for stencil pass.");
-    IGL_ASSERT_MSG((depthFailOp & 0x7) == depthFailOp, "Invalid VkStencilOp for depth fail.");
-    IGL_ASSERT_MSG((compareOp & 0x7) == compareOp, "Invalid VkCompareOp for stencil compare.");
+    IGL_DEBUG_ASSERT((failOp & 0x7) == failOp, "Invalid VkStencilOp for stencil fail.");
+    IGL_DEBUG_ASSERT((passOp & 0x7) == passOp, "Invalid VkStencilOp for stencil pass.");
+    IGL_DEBUG_ASSERT((depthFailOp & 0x7) == depthFailOp, "Invalid VkStencilOp for depth fail.");
+    IGL_DEBUG_ASSERT((compareOp & 0x7) == compareOp, "Invalid VkCompareOp for stencil compare.");
 
     if (front) {
       stencilFrontFailOp_ = failOp & 0x7;
@@ -190,10 +178,10 @@ class RenderPipelineState final : public IRenderPipelineState, public vulkan::Pi
  private:
   const igl::vulkan::Device& device_;
 
-  VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo_;
+  VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo_{};
 
   std::vector<VkVertexInputBindingDescription> vkBindings_;
-  std::vector<VkVertexInputAttributeDescription> vkAttributes_;
+  std::array<VkVertexInputAttributeDescription, IGL_VERTEX_ATTRIBUTES_MAX> vkAttributes_{};
 
   // This is empty for now.
   std::shared_ptr<RenderPipelineReflection> reflection_;
@@ -204,5 +192,4 @@ class RenderPipelineState final : public IRenderPipelineState, public vulkan::Pi
       pipelines_;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

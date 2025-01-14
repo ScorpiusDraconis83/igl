@@ -10,11 +10,9 @@
 #include <memory>
 
 #include <igl/vulkan/Common.h>
-#include <igl/vulkan/VulkanFunctions.h>
 #include <igl/vulkan/VulkanHelpers.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 /**
  * @brief A wrapper around a VkDevice.
@@ -34,7 +32,7 @@ class VulkanDevice final {
   VulkanDevice(const VulkanDevice&) = delete;
   VulkanDevice& operator=(const VulkanDevice&) = delete;
 
-  VkDevice getVkDevice() const {
+  [[nodiscard]] VkDevice getVkDevice() const {
     return device_;
   }
 
@@ -43,5 +41,4 @@ class VulkanDevice final {
   VkDevice device_ = VK_NULL_HANDLE;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

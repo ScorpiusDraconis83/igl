@@ -11,6 +11,7 @@
 #include <IGLU/texture_loader/TextureLoaderFactory.h>
 #include <igl/IGL.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,12 +28,21 @@ class ImageLoader {
  public:
   explicit ImageLoader(FileLoader& fileLoader);
   virtual ~ImageLoader() = default;
-  virtual ImageData loadImageData(const std::string& imageName) noexcept {
-    return defaultLoadImageData(imageName);
+  virtual ImageData loadImageData(const std::string& imageName,
+                                  std::optional<igl::TextureFormat> preferredFormat = {}) noexcept {
+    return defaultLoadImageData(imageName, preferredFormat);
   }
   static ImageData checkerboard() noexcept;
+  static ImageData white() noexcept;
 
- protected:
+  [[nodiscard]] ImageData loadImageDataFromFile(
+      const std::string& fileName,
+      std::optional<igl::TextureFormat> preferredFormat = {}) noexcept;
+  [[nodiscard]] ImageData loadImageDataFromMemory(
+      const uint8_t* data,
+      uint32_t length,
+      std::optional<igl::TextureFormat> preferredFormat = {}) noexcept;
+
   [[nodiscard]] const FileLoader& fileLoader() const noexcept {
     return fileLoader_;
   }
@@ -41,12 +51,9 @@ class ImageLoader {
     return fileLoader_;
   }
 
- protected:
-  [[nodiscard]] ImageData loadImageDataFromFile(const std::string& fileName) noexcept;
-  [[nodiscard]] ImageData loadImageDataFromMemory(const uint8_t* data, uint32_t length) noexcept;
-
  private:
-  ImageData defaultLoadImageData(const std::string& imageName) noexcept;
+  ImageData defaultLoadImageData(const std::string& imageName,
+                                 std::optional<igl::TextureFormat> preferredFormat) noexcept;
 
   FileLoader& fileLoader_;
   std::unique_ptr<iglu::textureloader::TextureLoaderFactory> factory_;

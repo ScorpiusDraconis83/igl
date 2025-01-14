@@ -11,8 +11,7 @@
 #include <igl/IGL.h>
 #include <igl/Texture.h>
 
-namespace iglu {
-namespace textureaccessor {
+namespace iglu::textureaccessor {
 
 enum class RequestStatus : uint8_t {
   Ready = 0,
@@ -23,7 +22,8 @@ enum class RequestStatus : uint8_t {
 /// Interface for getting CPU access to GPU texture data
 class ITextureAccessor {
  public:
-  ITextureAccessor(std::shared_ptr<igl::ITexture> texture) : texture_(std::move(texture)) {}
+  explicit ITextureAccessor(std::shared_ptr<igl::ITexture> texture) :
+    texture_(std::move(texture)) {}
 
   virtual ~ITextureAccessor() = default;
 
@@ -42,6 +42,9 @@ class ITextureAccessor {
   */
   virtual std::vector<unsigned char>& getBytes() = 0;
 
+  // copy data into preallocated buffer, returns copied data in bytes
+  virtual size_t copyBytes(unsigned char* ptr, size_t length) = 0;
+
   // Synchronously read the bytes of the ITexture. This is not recommended; using requestBytes() and
   // getBytes() is more performant when getBytes() is called later.
   // Receive an optional texture an input. It MUST be the same size as previous texture
@@ -52,9 +55,24 @@ class ITextureAccessor {
     return getBytes();
   }
 
+  // Synchronously read the bytes of the ITexture. This is not recommended; using requestBytes() and
+  // copyBytes() is more performant when copyBytes() is called later.
+  // Receive an optional texture an input. It MUST be the same size as previous texture
+
+  size_t requestAndCopyBytesSync(igl::ICommandQueue& commandQueue,
+                                 unsigned char* ptr,
+                                 size_t length,
+                                 std::shared_ptr<igl::ITexture> texture = nullptr) {
+    requestBytes(commandQueue, std::move(texture));
+    return copyBytes(ptr, length);
+  }
+
+  [[nodiscard]] std::shared_ptr<igl::ITexture> getTexture() const {
+    return texture_;
+  }
+
  protected:
   std::shared_ptr<igl::ITexture> texture_;
 };
 
-} // namespace textureaccessor
-} // namespace iglu
+} // namespace iglu::textureaccessor

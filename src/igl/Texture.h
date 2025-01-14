@@ -8,7 +8,6 @@
 #pragma once
 
 #include <algorithm>
-#include <igl/ColorSpace.h>
 #include <igl/CommandQueue.h>
 #include <igl/Common.h>
 #include <igl/ITrackedResource.h>
@@ -68,71 +67,79 @@ enum class TextureCubeFace : uint8_t { PosX = 0, NegX, PosY, NegY, PosZ, NegZ };
  *  numFaces     - number of cube texture faces in the range
  */
 struct TextureRangeDesc {
-  size_t x = 0;
-  size_t y = 0;
-  size_t z = 0;
-  size_t width = 1;
-  size_t height = 1;
-  size_t depth = 1;
-  size_t layer = 0;
-  size_t numLayers = 1;
-  size_t mipLevel = 0;
-  size_t numMipLevels = 1;
-  size_t face = 0;
-  size_t numFaces = 1;
+  uint32_t x = 0;
+  uint32_t y = 0;
+  uint32_t z = 0;
+  uint32_t width = 1;
+  uint32_t height = 1;
+  uint32_t depth = 1;
+  uint32_t layer = 0;
+  uint32_t numLayers = 1;
+  uint32_t mipLevel = 0;
+  uint32_t numMipLevels = 1;
+  uint32_t face = 0;
+  uint32_t numFaces = 1;
 
-  static TextureRangeDesc new1D(size_t x,
-                                size_t width,
-                                size_t mipLevel = 0,
-                                size_t numMipLevels = 1);
-  static TextureRangeDesc new1DArray(size_t x,
-                                     size_t width,
-                                     size_t layer,
-                                     size_t numLayers,
-                                     size_t mipLevel = 0,
-                                     size_t numMipLevels = 1);
-  static TextureRangeDesc new2D(size_t x,
-                                size_t y,
-                                size_t width,
-                                size_t height,
-                                size_t mipLevel = 0,
-                                size_t numMipLevels = 1);
-  static TextureRangeDesc new2DArray(size_t x,
-                                     size_t y,
-                                     size_t width,
-                                     size_t height,
-                                     size_t layer,
-                                     size_t numLayers,
-                                     size_t mipLevel = 0,
-                                     size_t numMipLevels = 1);
-  static TextureRangeDesc new3D(size_t x,
-                                size_t y,
-                                size_t z,
-                                size_t width,
-                                size_t height,
-                                size_t depth,
-                                size_t mipLevel = 0,
-                                size_t numMipLevels = 1);
-  static TextureRangeDesc newCube(size_t x,
-                                  size_t y,
-                                  size_t width,
-                                  size_t height,
-                                  size_t mipLevel = 0,
-                                  size_t numMipLevels = 1);
-  static TextureRangeDesc newCubeFace(size_t x,
-                                      size_t y,
-                                      size_t width,
-                                      size_t height,
-                                      size_t face,
-                                      size_t mipLevel = 0,
-                                      size_t numMipLevels = 1);
-  static TextureRangeDesc newCubeFace(size_t x,
-                                      size_t y,
-                                      size_t width,
-                                      size_t height,
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc new1D(uint32_t x,
+                                uint32_t width,
+                                uint32_t mipLevel = 0,
+                                uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc new1DArray(uint32_t x,
+                                     uint32_t width,
+                                     uint32_t layer,
+                                     uint32_t numLayers,
+                                     uint32_t mipLevel = 0,
+                                     uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc new2D(uint32_t x,
+                                uint32_t y,
+                                uint32_t width,
+                                uint32_t height,
+                                uint32_t mipLevel = 0,
+                                uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc new2DArray(uint32_t x,
+                                     uint32_t y,
+                                     uint32_t width,
+                                     uint32_t height,
+                                     uint32_t layer,
+                                     uint32_t numLayers,
+                                     uint32_t mipLevel = 0,
+                                     uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc new3D(uint32_t x,
+                                uint32_t y,
+                                uint32_t z,
+                                uint32_t width,
+                                uint32_t height,
+                                uint32_t depth,
+                                uint32_t mipLevel = 0,
+                                uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc newCube(uint32_t x,
+                                  uint32_t y,
+                                  uint32_t width,
+                                  uint32_t height,
+                                  uint32_t mipLevel = 0,
+                                  uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc newCubeFace(uint32_t x,
+                                      uint32_t y,
+                                      uint32_t width,
+                                      uint32_t height,
+                                      uint32_t face,
+                                      uint32_t mipLevel = 0,
+                                      uint32_t numMipLevels = 1);
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  static TextureRangeDesc newCubeFace(uint32_t x,
+                                      uint32_t y,
+                                      uint32_t width,
+                                      uint32_t height,
                                       TextureCubeFace face,
-                                      size_t mipLevel = 0,
-                                      size_t numMipLevels = 1);
+                                      uint32_t mipLevel = 0,
+                                      uint32_t numMipLevels = 1);
 
   /**
    * @brief Returns a new TextureRangeDesc based on this one but reduced to the specified mipLevel.
@@ -140,35 +147,35 @@ struct TextureRangeDesc {
    * @param newMipLevel The mip level of the returned range.
    * @remark The returned range only has 1 mip level.
    */
-  [[nodiscard]] TextureRangeDesc atMipLevel(size_t newMipLevel) const noexcept;
+  [[nodiscard]] TextureRangeDesc atMipLevel(uint32_t newMipLevel) const noexcept;
   /**
    * @brief Returns a new TextureRangeDesc based on this one but with the specified number of
    * mip levels.
    *
    * @param newNumMipLevels The number of mip levels in the returned range.
    */
-  [[nodiscard]] TextureRangeDesc withNumMipLevels(size_t newNumMipLevels) const noexcept;
+  [[nodiscard]] TextureRangeDesc withNumMipLevels(uint32_t newNumMipLevels) const noexcept;
   /**
    * @brief Returns a new TextureRangeDesc based on this one but reduced to the specified layer.
    *
    * @param newLayer The layer of the returned range.
    * @remark The returned range only has 1 layer.
    */
-  [[nodiscard]] TextureRangeDesc atLayer(size_t newLayer) const noexcept;
+  [[nodiscard]] TextureRangeDesc atLayer(uint32_t newLayer) const noexcept;
   /**
    * @brief Returns a new TextureRangeDesc based on this one but with the specified number of
    * layers.
    *
    * @param newNumLayers The number of layers in the returned range.
    */
-  [[nodiscard]] TextureRangeDesc withNumLayers(size_t newNumLayers) const noexcept;
+  [[nodiscard]] TextureRangeDesc withNumLayers(uint32_t newNumLayers) const noexcept;
   /**
    * @brief Returns a new TextureRangeDesc based on this one but reduced to the specified face.
    *
    * @param newFace The face of the returned range.
    * @remark The returned range only has 1 face.
    */
-  [[nodiscard]] TextureRangeDesc atFace(size_t newFace) const noexcept;
+  [[nodiscard]] TextureRangeDesc atFace(uint32_t newFace) const noexcept;
   /**
    * @brief Returns a new TextureRangeDesc based on this one but reduced to the specified face.
    *
@@ -181,7 +188,7 @@ struct TextureRangeDesc {
    *
    * @param newNumFaces The number of faces in the returned range.
    */
-  [[nodiscard]] TextureRangeDesc withNumFaces(size_t newNumFaces) const noexcept;
+  [[nodiscard]] TextureRangeDesc withNumFaces(uint32_t newNumFaces) const noexcept;
 
   /**
    * Validates the range.
@@ -231,6 +238,7 @@ struct TextureFormatProperties {
     Compressed = 1 << 2,
     sRGB = 1 << 3,
     Integer = 1 << 4,
+    HDR = 1 << 5, // Color format with more than 8 bits per component
   };
 
   const char* IGL_NONNULL name = "Invalid";
@@ -243,6 +251,7 @@ struct TextureFormatProperties {
   const uint8_t minBlocksX = 1;
   const uint8_t minBlocksY = 1;
   const uint8_t minBlocksZ = 1;
+  const uint8_t numPlanes = 1;
   const uint8_t flags = 0;
 
   /**
@@ -268,6 +277,12 @@ struct TextureFormatProperties {
    */
   [[nodiscard]] bool isSRGB() const noexcept {
     return (flags & Flags::sRGB) != 0;
+  }
+  /**
+   * @brief true for high precision color texture formats.
+   */
+  [[nodiscard]] bool isHDR() const noexcept {
+    return (flags & Flags::HDR) != 0;
   }
 
   [[nodiscard]] bool hasDepth() const noexcept {
@@ -316,7 +331,7 @@ struct TextureFormatProperties {
    * dimensions.
    * @return Calculated number of rows of texture data for the texture format.
    */
-  [[nodiscard]] size_t getRows(TextureRangeDesc range) const noexcept;
+  [[nodiscard]] uint32_t getRows(TextureRangeDesc range) const noexcept;
 
   /**
    * @brief Utility function to calculate the size in bytes per row for a texture format.
@@ -326,7 +341,7 @@ struct TextureFormatProperties {
    * subrange and/or mip level, which may be be less than the full texture width.
    * @return Calculated total size in bytes of a row of texture data for the texture format.
    */
-  [[nodiscard]] size_t getBytesPerRow(size_t texWidth) const noexcept;
+  [[nodiscard]] uint32_t getBytesPerRow(uint32_t texWidth) const noexcept;
 
   /**
    * @brief Utility function to calculate the size in bytes per row for a texture format.
@@ -336,7 +351,7 @@ struct TextureFormatProperties {
    * subrange and/or mip level, which may be be less than the full texture width.
    * @return Calculated total size in bytes of a row of texture data for the texture format.
    */
-  [[nodiscard]] size_t getBytesPerRow(TextureRangeDesc range) const noexcept;
+  [[nodiscard]] uint32_t getBytesPerRow(TextureRangeDesc range) const noexcept;
 
   /**
    * @brief Utility function to calculate the size in bytes per texture layer for a texture format.
@@ -350,10 +365,10 @@ struct TextureFormatProperties {
    * subrange and/or mip level, which may be be less than the full texture dimensions.
    * @return Calculated total size in bytes of a layer of texture data for the texture format.
    */
-  [[nodiscard]] size_t getBytesPerLayer(size_t texWidth,
-                                        size_t texHeight,
-                                        size_t texDepth,
-                                        size_t bytesPerRow = 0) const noexcept;
+  [[nodiscard]] size_t getBytesPerLayer(uint32_t texWidth,
+                                        uint32_t texHeight,
+                                        uint32_t texDepth,
+                                        uint32_t bytesPerRow = 0) const noexcept;
 
   /**
    * @brief Utility function to calculate the size in bytes per texture layer for a texture format.
@@ -368,7 +383,7 @@ struct TextureFormatProperties {
    * @return Calculated total size in bytes of a layer of texture data for the texture format.
    */
   [[nodiscard]] size_t getBytesPerLayer(TextureRangeDesc range,
-                                        size_t bytesPerRow = 0) const noexcept;
+                                        uint32_t bytesPerRow = 0) const noexcept;
 
   /**
    * @brief Utility function to calculate the size in bytes per texture range for a texture format.
@@ -383,7 +398,7 @@ struct TextureFormatProperties {
    * @return Calculated total size in bytes of a the range of texture data for the texture format.
    */
   [[nodiscard]] size_t getBytesPerRange(TextureRangeDesc range,
-                                        size_t bytesPerRow = 0) const noexcept;
+                                        uint32_t bytesPerRow = 0) const noexcept;
 
   /**
    * @brief Utility function to calculate the number of mip levels given a total size in bytes of
@@ -393,9 +408,9 @@ struct TextureFormatProperties {
    * @param texHeight  The height of the first mip level of the texture.
    * @return Calculated number of mip levels.
    */
-  [[nodiscard]] size_t getNumMipLevels(size_t texWidth,
-                                       size_t texHeight,
-                                       size_t totalBytes) const noexcept;
+  [[nodiscard]] uint32_t getNumMipLevels(uint32_t texWidth,
+                                         uint32_t texHeight,
+                                         size_t totalBytes) const noexcept;
 
   /**
    * @brief Utility function to calculate the byte offset of the start of a subrange within a block
@@ -420,7 +435,7 @@ struct TextureFormatProperties {
    * @return The byte offset within the full block of data for the start of the subrange. */
   [[nodiscard]] size_t getSubRangeByteOffset(const TextureRangeDesc& range,
                                              const TextureRangeDesc& subRange,
-                                             size_t bytesPerRow = 0) const noexcept;
+                                             uint32_t bytesPerRow = 0) const noexcept;
 };
 
 /**
@@ -453,18 +468,29 @@ struct TextureDesc {
 
   using TextureUsage = uint8_t;
 
-  size_t width = 1;
-  size_t height = 1;
-  size_t depth = 1;
-  size_t numLayers = 1;
+  /**
+   * @brief Flag for texture image storage (Vulkan Only)
+   *
+   *  Optimal - Image layout for best texture read performance
+   *            Corresponds to VK_IMAGE_TILING_OPTIMAL
+   *  Linear - Image layout for linearly storing texture data
+   *           Corresponds to VK_IMAGE_TILING_LINEAR
+   */
+  enum class TextureTiling : uint8_t { Optimal, Linear };
+
+  uint32_t width = 1;
+  uint32_t height = 1;
+  uint32_t depth = 1;
+  uint32_t numLayers = 1;
   uint32_t numSamples = 1;
   TextureUsage usage = 0;
   uint32_t numMipLevels = 1;
   TextureType type = TextureType::Invalid;
   TextureFormat format = TextureFormat::Invalid;
   ResourceStorage storage = ResourceStorage::Invalid;
+  TextureTiling tiling = TextureTiling::Optimal;
 
-  std::string debugName = "";
+  std::string debugName;
 
   bool operator==(const TextureDesc& rhs) const;
   bool operator!=(const TextureDesc& rhs) const;
@@ -480,8 +506,8 @@ struct TextureDesc {
    * @return TextureDesc
    */
   static TextureDesc new2D(TextureFormat format,
-                           size_t width,
-                           size_t height,
+                           uint32_t width,
+                           uint32_t height,
                            TextureUsage usage,
                            const char* IGL_NULLABLE debugName = nullptr) {
     return TextureDesc{width,
@@ -494,6 +520,7 @@ struct TextureDesc {
                        TextureType::TwoD,
                        format,
                        ResourceStorage::Invalid,
+                       TextureTiling::Optimal,
                        debugName ? debugName : ""};
   }
 
@@ -509,9 +536,9 @@ struct TextureDesc {
    * @return TextureDesc
    */
   static TextureDesc new2DArray(TextureFormat format,
-                                size_t width,
-                                size_t height,
-                                size_t numLayers,
+                                uint32_t width,
+                                uint32_t height,
+                                uint32_t numLayers,
                                 TextureUsage usage,
                                 const char* IGL_NULLABLE debugName = nullptr) {
     return TextureDesc{
@@ -525,6 +552,7 @@ struct TextureDesc {
         TextureType::TwoDArray,
         format,
         ResourceStorage::Invalid,
+        TextureTiling::Optimal,
         debugName ? debugName : "",
     };
   }
@@ -540,8 +568,8 @@ struct TextureDesc {
    * @return TextureDesc
    */
   static TextureDesc newCube(TextureFormat format,
-                             size_t width,
-                             size_t height,
+                             uint32_t width,
+                             uint32_t height,
                              TextureUsage usage,
                              const char* IGL_NULLABLE debugName = nullptr) {
     return TextureDesc{width,
@@ -554,6 +582,7 @@ struct TextureDesc {
                        TextureType::Cube,
                        format,
                        ResourceStorage::Invalid,
+                       TextureTiling::Optimal,
                        debugName ? debugName : ""};
   }
 
@@ -569,9 +598,9 @@ struct TextureDesc {
    * @return TextureDesc
    */
   static TextureDesc new3D(TextureFormat format,
-                           size_t width,
-                           size_t height,
-                           size_t depth,
+                           uint32_t width,
+                           uint32_t height,
+                           uint32_t depth,
                            TextureUsage usage,
                            const char* IGL_NULLABLE debugName = nullptr) {
     return TextureDesc{width,
@@ -584,6 +613,7 @@ struct TextureDesc {
                        TextureType::ThreeD,
                        format,
                        ResourceStorage::Invalid,
+                       TextureTiling::Optimal,
                        debugName ? debugName : ""};
   }
 
@@ -597,8 +627,8 @@ struct TextureDesc {
    * @return TextureDesc
    */
   static TextureDesc newExternalImage(TextureFormat format,
-                                      size_t width,
-                                      size_t height,
+                                      uint32_t width,
+                                      uint32_t height,
                                       TextureUsage usage,
                                       const char* IGL_NULLABLE debugName = nullptr) {
     return TextureDesc{width,
@@ -611,8 +641,40 @@ struct TextureDesc {
                        TextureType::ExternalImage,
                        format,
                        ResourceStorage::Invalid,
+                       TextureTiling::Optimal,
                        debugName ? debugName : ""};
   }
+
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+  /**
+   * @brief Utility to create a new image texture with linked hardware buffer
+   *
+   * @param format The format of the texture
+   * @param usage A combination of TextureUsage flags
+   * @param width  The width of the texture
+   * @param height The height of the texture
+   * @param debugName An optional debug name
+   * @return TextureDesc
+   */
+  static TextureDesc newNativeHWBufferImage(TextureFormat format,
+                                            TextureUsage usage,
+                                            uint32_t width,
+                                            uint32_t height,
+                                            const char* IGL_NULLABLE debugName = nullptr) {
+    return TextureDesc{width,
+                       height,
+                       1,
+                       1,
+                       1,
+                       usage,
+                       1,
+                       TextureType::TwoD,
+                       format,
+                       ResourceStorage::Shared,
+                       TextureTiling::Optimal,
+                       debugName ? debugName : ""};
+  }
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
 
   /**
    * @brief Creates a TextureRangeDesc equivalent to descriptor.
@@ -629,7 +691,7 @@ struct TextureDesc {
    * @param depth The depth of the texture
    * @return uint32_t
    */
-  static uint32_t calcNumMipLevels(size_t width, size_t height, size_t depth = 1);
+  static uint32_t calcNumMipLevels(uint32_t width, uint32_t height, uint32_t depth = 1);
 };
 
 /**
@@ -641,7 +703,7 @@ class ITexture : public ITrackedResource<ITexture> {
  public:
   explicit ITexture(TextureFormat format) :
     properties_(TextureFormatProperties::fromTextureFormat(format)) {}
-  virtual ~ITexture() = default;
+  ~ITexture() override = default;
 
   /**
    * @brief Indicates if this type of texture supports upload.
@@ -699,7 +761,7 @@ class ITexture : public ITrackedResource<ITexture> {
    *
    * @return size_t
    */
-  [[nodiscard]] size_t getDepth() const;
+  [[nodiscard]] uint32_t getDepth() const;
   /**
    * @brief Returns dimensions (width, height and depth) of the texture.
    *
@@ -712,14 +774,14 @@ class ITexture : public ITrackedResource<ITexture> {
    *
    * @return size_t
    */
-  [[nodiscard]] virtual size_t getNumLayers() const = 0;
+  [[nodiscard]] virtual uint32_t getNumLayers() const = 0;
   /**
    * @brief Returns the number of faces the texture has
    * For non-cube textures, return 1
    *
    * @return size_t
    */
-  [[nodiscard]] size_t getNumFaces() const;
+  [[nodiscard]] uint32_t getNumFaces() const;
   /**
    * @brief Returns texture format properties of the texture
    *
@@ -750,14 +812,26 @@ class ITexture : public ITrackedResource<ITexture> {
    * @brief Generates mipmap command using the command queue
    *
    * @param cmdQueue The command queue that is generated from the graphics device.
+   * @param range The texture range descriptor containing the extents of the image to generate
+   * mipmaps. If nullptr is provided, the function generates mips for all levels. Note: not all
+   * parameters in the TextureRangeDesc structure are supported for mipmap generation. For example,
+   * the x, y, z offsets and the dimensions are not used by this function. Also, not all
+   * implementations support generating a subset of miplevels for an image (OpenGL, for example)
    */
-  virtual void generateMipmap(ICommandQueue& cmdQueue) const = 0;
+  virtual void generateMipmap(ICommandQueue& cmdQueue,
+                              const TextureRangeDesc* IGL_NULLABLE range = nullptr) const = 0;
   /**
    * @brief Generates mipmap command using an existing command buffer
-   *
+   * @param range The texture range descriptor containing the extents of the image to generate
+   * mipmaps. If nullptr is provided, the function generates mips for all levels. Note: not all
+   * parameters in the TextureRangeDesc structure are supported for mipmap generation. For example,
+   * the x, y, z offsets and the dimensions are not used by this function. Also, not all
+   * implementations support generating a subset of miplevels for an image (OpenGL, for example)
    * @param cmdBuffer A command buffer that is generated from an ICommandQueue.
    */
-  virtual void generateMipmap(ICommandBuffer& cmdBuffer) const = 0;
+  virtual void generateMipmap(ICommandBuffer& cmdBuffer,
+                              const TextureRangeDesc* IGL_NULLABLE range = nullptr) const = 0;
+
   /**
    * @brief Returns the number of mipmap levels
    */
@@ -902,7 +976,7 @@ class ITexture : public ITrackedResource<ITexture> {
                                               IGL_MAYBE_UNUSED const TextureRangeDesc& range,
                                               IGL_MAYBE_UNUSED const void* IGL_NULLABLE data,
                                               IGL_MAYBE_UNUSED size_t bytesPerRow = 0) const {
-    IGL_ASSERT_NOT_IMPLEMENTED();
+    IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
     return Result{Result::Code::Unimplemented, "Upload not implemented."};
   }
 
@@ -927,7 +1001,7 @@ namespace std {
 template<>
 struct hash<igl::TextureFormat> {
   // Declare member
-  size_t operator()(igl::TextureFormat const& /*key*/) const;
+  size_t operator()(const igl::TextureFormat& /*key*/) const;
 };
 
 } // namespace std

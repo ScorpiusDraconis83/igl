@@ -27,10 +27,10 @@ class FramebufferBindingGuard {
 
  private:
   IContext& context_;
-  GLuint currentRenderbuffer_;
-  GLuint currentFramebuffer_;
-  GLuint currentReadFramebuffer_;
-  GLuint currentDrawFramebuffer_;
+  GLuint currentRenderbuffer_ = 0;
+  GLuint currentFramebuffer_ = 0;
+  GLuint currentReadFramebuffer_ = 0;
+  GLuint currentDrawFramebuffer_ = 0;
 };
 
 // Framebuffer encapsulates an immutable render target (attachments) and per-render pass state.
@@ -132,6 +132,7 @@ class CustomFramebuffer final : public Framebuffer {
   // Methods
   void updateDrawable(std::shared_ptr<ITexture> texture) override;
   void updateDrawable(SurfaceTextures surfaceTextures) override;
+  void updateResolveAttachment(std::shared_ptr<ITexture> texture) override;
 
   bool isInitialized() const;
   bool hasImplicitColorAttachment() const;
@@ -143,7 +144,7 @@ class CustomFramebuffer final : public Framebuffer {
   void unbind() const override;
 
  private:
-  void prepareResource(Result* outResult);
+  void prepareResource(const std::string& debugName, Result* outResult);
   void updateDrawableInternal(SurfaceTextures surfaceTextures, bool updateDepthStencil);
 
   bool initialized_ = false;
@@ -167,6 +168,7 @@ class CurrentFramebuffer final : public Framebuffer {
   std::shared_ptr<ITexture> getStencilAttachment() const override;
   void updateDrawable(std::shared_ptr<ITexture> texture) override;
   void updateDrawable(SurfaceTextures surfaceTextures) override;
+  void updateResolveAttachment(std::shared_ptr<ITexture> texture) override;
   [[nodiscard]] FramebufferMode getMode() const override;
 
   // opengl::Framebuffer

@@ -29,8 +29,7 @@
 #define OFFSCREEN_TEX_WIDTH 4
 #define OFFSCREEN_TEX_HEIGHT 4
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 const auto quarterPixel = (float)(0.5 / OFFSCREEN_RT_WIDTH);
 const float backgroundColor = 0.501f;
@@ -79,11 +78,11 @@ class RenderCommandEncoderTest : public ::testing::Test {
 
     Result ret;
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message;
     ASSERT_TRUE(offscreenTexture_ != nullptr);
 
     depthStencilTexture_ = iglDev_->createTexture(depthTexDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message;
     ASSERT_TRUE(depthStencilTexture_ != nullptr);
 
     // Create framebuffer using the offscreen texture
@@ -94,7 +93,7 @@ class RenderCommandEncoderTest : public ::testing::Test {
     framebufferDesc.stencilAttachment.texture = depthStencilTexture_;
 
     framebuffer_ = iglDev_->createFramebuffer(framebufferDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(framebuffer_ != nullptr);
 
     // Initialize render pass descriptor
@@ -138,17 +137,18 @@ class RenderCommandEncoderTest : public ::testing::Test {
     inputDesc.numAttributes = inputDesc.numInputBindings = 2;
 
     vertexInputState_ = iglDev_->createVertexInputState(inputDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vertexInputState_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
 
     // Initialize Render Pipeline Descriptor, but leave the creation
     // to the individual tests in case further customization is required
+    RenderPipelineDesc renderPipelineDesc_;
     renderPipelineDesc_.vertexInputState = vertexInputState_;
     renderPipelineDesc_.shaderStages = shaderStages_;
     renderPipelineDesc_.targetDesc.colorAttachments.resize(1);
@@ -170,32 +170,65 @@ class RenderCommandEncoderTest : public ::testing::Test {
     const auto rangeDesc = TextureRangeDesc::new2D(0, 0, OFFSCREEN_TEX_WIDTH, OFFSCREEN_TEX_HEIGHT);
     texture_->upload(rangeDesc, data::texture::TEX_RGBA_GRAY_4x4);
 
-    renderPipelineState_ = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-    ASSERT_TRUE(ret.isOk());
-    ASSERT_TRUE(renderPipelineState_ != nullptr);
+    auto createPipeline =
+        [&renderPipelineDesc_, &ret, this](
+            igl::PrimitiveType topology) -> std::shared_ptr<igl::IRenderPipelineState> {
+      renderPipelineDesc_.topology = topology;
+      return iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
+    };
+    renderPipelineState_Point_ = createPipeline(PrimitiveType::Point);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+    ASSERT_TRUE(renderPipelineState_Point_ != nullptr);
+    renderPipelineState_Line_ = createPipeline(PrimitiveType::Line);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+    ASSERT_TRUE(renderPipelineState_Line_ != nullptr);
+    renderPipelineState_LineStrip_ = createPipeline(PrimitiveType::LineStrip);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+    ASSERT_TRUE(renderPipelineState_LineStrip_ != nullptr);
+    renderPipelineState_Triangle_ = createPipeline(PrimitiveType::Triangle);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+    ASSERT_TRUE(renderPipelineState_Triangle_ != nullptr);
+    renderPipelineState_TriangleStrip_ = createPipeline(PrimitiveType::TriangleStrip);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+    ASSERT_TRUE(renderPipelineState_TriangleStrip_ != nullptr);
 
     depthStencilState_ = iglDev_->createDepthStencilState({}, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(depthStencilState_ != nullptr);
+
+    bindGroupTexture_ = iglDev_->createBindGroup(
+        igl::BindGroupTextureDesc{{texture_}, {samp_}, "Offscreen texture test"}, nullptr, &ret);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   }
 
   void encodeAndSubmit(
-      const std::function<void(const std::unique_ptr<igl::IRenderCommandEncoder>&)>& func) {
+      const std::function<void(const std::unique_ptr<igl::IRenderCommandEncoder>&)>& func,
+      bool useBindGroup = false,
+      bool useNewBindTexture = false) {
     Result ret;
 
     auto cmdBuffer = cmdQueue_->createCommandBuffer({}, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(cmdBuffer != nullptr);
 
     auto encoder = cmdBuffer->createRenderCommandEncoder(renderPass_, framebuffer_);
-    encoder->bindTexture(textureUnit_, BindTarget::kFragment, texture_.get());
-    encoder->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-    encoder->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    encoder->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    if (useBindGroup) {
+      encoder->bindBindGroup(bindGroupTexture_);
+    } else {
+      useNewBindTexture ? encoder->bindTexture(textureUnit_, texture_.get())
+                        : encoder->bindTexture(textureUnit_, BindTarget::kFragment, texture_.get());
+      encoder->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
+    }
 
-    encoder->bindRenderPipelineState(renderPipelineState_);
+    encoder->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    encoder->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
+
     encoder->bindDepthStencilState(depthStencilState_);
+
+    if (ib_) {
+      encoder->bindIndexBuffer(*ib_, IndexFormat::UInt32);
+    }
 
     const igl::Viewport viewport = {
         0.0f, 0.0f, (float)OFFSCREEN_RT_WIDTH, (float)OFFSCREEN_RT_HEIGHT, 0.0f, +1.0f};
@@ -250,18 +283,20 @@ class RenderCommandEncoderTest : public ::testing::Test {
   }
 
   void debugLog(const std::vector<uint32_t>& pixels) {
-    IGL_DEBUG_LOG("\nFrameBuffer begins.\n");
-    IGL_DEBUG_LOG("%s\n", ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    IGL_LOG_DEBUG("\nFrameBuffer begins.\n");
+    IGL_LOG_DEBUG("%s\n", ::testing::UnitTest::GetInstance()->current_test_info()->name());
     for (int i = OFFSCREEN_RT_HEIGHT - 1; i >= 0; i--) {
       for (int j = 0; j < OFFSCREEN_RT_WIDTH; j++) {
-        IGL_DEBUG_LOG("%x, ", pixels[i * OFFSCREEN_RT_WIDTH + j]);
+        IGL_LOG_DEBUG("%x, ", pixels[i * OFFSCREEN_RT_WIDTH + j]);
       }
-      IGL_DEBUG_LOG("\n");
+      IGL_LOG_DEBUG("\n");
     }
-    IGL_DEBUG_LOG("\nFrameBuffer ends.\n");
+    IGL_LOG_DEBUG("\nFrameBuffer ends.\n");
   }
 
-  void initializeBuffers(const std::vector<float>& verts, const std::vector<float>& uvs) {
+  void initializeBuffers(const std::vector<float>& verts,
+                         const std::vector<float>& uvs,
+                         const std::vector<uint32_t>& indices = {}) {
     BufferDesc bufDesc;
 
     bufDesc.type = BufferDesc::BufferTypeBits::Vertex;
@@ -270,7 +305,7 @@ class RenderCommandEncoderTest : public ::testing::Test {
 
     Result ret;
     vb_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vb_ != nullptr);
 
     bufDesc.type = BufferDesc::BufferTypeBits::Vertex;
@@ -278,8 +313,27 @@ class RenderCommandEncoderTest : public ::testing::Test {
     bufDesc.length = sizeof(float) * uvs.size();
 
     uv_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(uv_ != nullptr);
+
+    if (!indices.empty()) {
+      bufDesc.type = BufferDesc::BufferTypeBits::Index;
+      bufDesc.data = indices.data();
+      bufDesc.length = sizeof(uint32_t) * indices.size();
+      ib_ = iglDev_->createBuffer(bufDesc, &ret);
+      ASSERT_TRUE(ret.isOk());
+      ASSERT_TRUE(ib_ != nullptr);
+    }
+  }
+  void initialize8BitIndices(const std::vector<uint8_t>& indices) {
+    BufferDesc desc;
+    desc.type = BufferDesc::BufferTypeBits::Index;
+    desc.data = indices.data();
+    desc.length = sizeof(uint8_t) * indices.size();
+    Result ret;
+    ib_ = iglDev_->createBuffer(desc, &ret);
+    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ib_ != nullptr);
   }
 
   void TearDown() override {}
@@ -297,15 +351,19 @@ class RenderCommandEncoderTest : public ::testing::Test {
   std::shared_ptr<IShaderStages> shaderStages_;
 
   std::shared_ptr<IVertexInputState> vertexInputState_;
-  std::shared_ptr<IBuffer> vb_, uv_;
+  std::shared_ptr<IBuffer> vb_, uv_, ib_;
 
   std::shared_ptr<ISamplerState> samp_;
 
-  RenderPipelineDesc renderPipelineDesc_;
   std::shared_ptr<ITexture> texture_;
 
-  std::shared_ptr<IRenderPipelineState> renderPipelineState_;
+  std::shared_ptr<IRenderPipelineState> renderPipelineState_Point_;
+  std::shared_ptr<IRenderPipelineState> renderPipelineState_Line_;
+  std::shared_ptr<IRenderPipelineState> renderPipelineState_LineStrip_;
+  std::shared_ptr<IRenderPipelineState> renderPipelineState_Triangle_;
+  std::shared_ptr<IRenderPipelineState> renderPipelineState_TriangleStrip_;
   std::shared_ptr<IDepthStencilState> depthStencilState_;
+  igl::Holder<BindGroupTextureHandle> bindGroupTexture_;
 
   const std::string backend_ = IGL_BACKEND_TYPE;
 
@@ -319,13 +377,42 @@ TEST_F(RenderCommandEncoderTest, shouldDrawAPoint) {
       { 0.5, 0.5 } // clang-format on
   );
 
-  encodeAndSubmit([](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
-    encoder->draw(PrimitiveType::Point, 0, 1);
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Point_);
+    encoder->draw(1);
   });
 
   auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
   // clang-format off
-  std::vector<uint32_t> expectedPixels {
+  std::vector<uint32_t> const expectedPixels {
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
+    backgroundColorHex, backgroundColorHex, grayColor,          backgroundColorHex,
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
+  };
+  // clang-format on
+
+  verifyFrameBuffer(expectedPixels);
+}
+
+TEST_F(RenderCommandEncoderTest, shouldDrawAPointNewBindTexture) {
+  initializeBuffers(
+      // clang-format off
+      { quarterPixel, quarterPixel, 0.0f, 1.0f },
+      { 0.5, 0.5 } // clang-format on
+  );
+
+  encodeAndSubmit(
+      [this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+        encoder->bindRenderPipelineState(renderPipelineState_Point_);
+        encoder->draw(1);
+      },
+      false,
+      true);
+
+  auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
+  // clang-format off
+  std::vector<uint32_t> const expectedPixels {
     backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
     backgroundColorHex, backgroundColorHex, grayColor,          backgroundColorHex,
     backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
@@ -349,13 +436,14 @@ TEST_F(RenderCommandEncoderTest, shouldDrawALine) {
       } // clang-format on
   );
 
-  encodeAndSubmit([](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
-    encoder->draw(PrimitiveType::Line, 0, 2);
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Line_);
+    encoder->draw(2);
   });
 
   auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
   // clang-format off
-  std::vector<uint32_t> expectedPixels {
+  std::vector<uint32_t> const expectedPixels {
     backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
     backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
     backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
@@ -383,16 +471,144 @@ TEST_F(RenderCommandEncoderTest, shouldDrawLineStrip) {
       } // clang-format on
   );
 
-  encodeAndSubmit([](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
-    encoder->draw(PrimitiveType::LineStrip, 0, 4);
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_LineStrip_);
+    encoder->draw(4);
   });
 
   auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
   // clang-format off
-  std::vector<uint32_t> expectedPixels {
+  std::vector<uint32_t> const expectedPixels {
     backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
     backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
     backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
+    grayColor,          grayColor,          grayColor,          grayColor,
+  };
+  // clang-format on
+
+  verifyFrameBuffer(expectedPixels);
+}
+
+TEST_F(RenderCommandEncoderTest, drawIndexedFirstIndex) {
+  if (!iglDev_->hasFeature(igl::DeviceFeatures::DrawFirstIndexFirstVertex)) {
+    GTEST_SKIP();
+    return;
+  }
+  initializeBuffers(
+      // clang-format off
+      {
+        -1.0f - quarterPixel, -1.0f,                0.0f, 1.0f,
+         1.0f,                -1.0f,                0.0f, 1.0f,
+         1.0f,                 1.0f + quarterPixel, 0.0f, 1.0f,
+      },
+      {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        1.0f, 1.0f,
+      },
+      {
+         0, 0, 0, 0, 1, 2, // the first 3 indices are dummies
+      } // clang-format on
+  );
+
+  ASSERT_TRUE(ib_ != nullptr);
+
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Triangle_);
+    encoder->drawIndexed(3, 1, 3); // skip the first 3 dummy indices
+  });
+
+  const auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
+  // clang-format off
+  const std::vector<uint32_t> expectedPixels {
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
+    backgroundColorHex, backgroundColorHex, grayColor,          grayColor,
+    backgroundColorHex, grayColor,          grayColor,          grayColor,
+    grayColor,          grayColor,          grayColor,          grayColor,
+  };
+  // clang-format on
+
+  verifyFrameBuffer(expectedPixels);
+}
+
+TEST_F(RenderCommandEncoderTest, drawIndexed8Bit) {
+  if (!iglDev_->hasFeature(igl::DeviceFeatures::Indices8Bit)) {
+    GTEST_SKIP();
+    return;
+  }
+  initializeBuffers(
+      // clang-format off
+      {
+        -1.0f - quarterPixel, -1.0f,                0.0f, 1.0f,
+         1.0f,                -1.0f,                0.0f, 1.0f,
+         1.0f,                 1.0f + quarterPixel, 0.0f, 1.0f,
+      },
+      {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        1.0f, 1.0f,
+      } // clang-format on
+  );
+  initialize8BitIndices({0, 1, 2});
+
+  ASSERT_TRUE(ib_ != nullptr);
+
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Triangle_);
+    encoder->bindIndexBuffer(*ib_, IndexFormat::UInt8);
+    encoder->drawIndexed(3);
+  });
+
+  const auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
+  // clang-format off
+  const std::vector<uint32_t> expectedPixels {
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
+    backgroundColorHex, backgroundColorHex, grayColor,          grayColor,
+    backgroundColorHex, grayColor,          grayColor,          grayColor,
+    grayColor,          grayColor,          grayColor,          grayColor,
+  };
+  // clang-format on
+
+  verifyFrameBuffer(expectedPixels);
+}
+
+TEST_F(RenderCommandEncoderTest, drawInstanced) {
+  if (!iglDev_->hasFeature(igl::DeviceFeatures::DrawFirstIndexFirstVertex)) {
+    GTEST_SKIP();
+    return;
+  }
+  initializeBuffers(
+      // clang-format off
+      {
+        -1.0f - quarterPixel, -1.0f,                0.0f, 1.0f,
+         1.0f,                -1.0f,                0.0f, 1.0f,
+         1.0f,                 1.0f + quarterPixel, 0.0f, 1.0f,
+      },
+      {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        1.0f, 1.0f,
+      },
+      {
+         0, 1, 2,
+      } // clang-format on
+  );
+
+  ASSERT_TRUE(ib_ != nullptr);
+
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Triangle_);
+    // draw 2 indentical instances, one on top of another; this will trigger drawElementsInstanced()
+    // in OpenGL
+    encoder->drawIndexed(3, 2);
+  });
+
+  const auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
+  // clang-format off
+  const std::vector<uint32_t> expectedPixels {
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
+    backgroundColorHex, backgroundColorHex, grayColor,          grayColor,
+    backgroundColorHex, grayColor,          grayColor,          grayColor,
     grayColor,          grayColor,          grayColor,          grayColor,
   };
   // clang-format on
@@ -415,13 +631,14 @@ TEST_F(RenderCommandEncoderTest, shouldDrawATriangle) {
       } // clang-format on
   );
 
-  encodeAndSubmit([](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
-    encoder->draw(PrimitiveType::Triangle, 0, 3);
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Triangle_);
+    encoder->draw(3);
   });
 
   auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
   // clang-format off
-  std::vector<uint32_t> expectedPixels {
+  std::vector<uint32_t> const expectedPixels {
     backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
     backgroundColorHex, backgroundColorHex, grayColor,          grayColor,
     backgroundColorHex, grayColor,          grayColor,          grayColor,
@@ -448,12 +665,14 @@ TEST_F(RenderCommandEncoderTest, shouldDrawTriangleStrip) {
       } // clang-format on
   );
 
-  encodeAndSubmit([](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
-    encoder->draw(PrimitiveType::TriangleStrip, 0, 4);
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->insertDebugEventLabel("Rendering a triangle strip...");
+    encoder->bindRenderPipelineState(renderPipelineState_TriangleStrip_);
+    encoder->draw(4);
   });
 
   verifyFrameBuffer([](const std::vector<uint32_t>& pixels) {
-    for (auto& pixel : pixels) {
+    for (const auto& pixel : pixels) {
       ASSERT_EQ(pixel, data::texture::TEX_RGBA_GRAY_4x4[0]);
     }
   });
@@ -480,20 +699,93 @@ TEST_F(RenderCommandEncoderTest, shouldNotDraw) {
       } // clang-format on
   );
 
-  encodeAndSubmit([](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
-    encoder->draw(PrimitiveType::Point, 0, 0);
-    encoder->draw(PrimitiveType::Line, 0, 0);
-    encoder->draw(PrimitiveType::LineStrip, 0, 0);
-    encoder->draw(PrimitiveType::Triangle, 0, 0);
-    encoder->draw(PrimitiveType::TriangleStrip, 0, 0);
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Point_);
+    encoder->draw(0);
+    encoder->bindRenderPipelineState(renderPipelineState_Line_);
+    encoder->draw(0);
+    encoder->bindRenderPipelineState(renderPipelineState_LineStrip_);
+    encoder->draw(0);
+    encoder->bindRenderPipelineState(renderPipelineState_Triangle_);
+    encoder->draw(0);
+    encoder->bindRenderPipelineState(renderPipelineState_TriangleStrip_);
+    encoder->draw(0);
   });
 
   verifyFrameBuffer([](const std::vector<uint32_t>& pixels) {
-    for (auto& pixel : pixels) {
+    for (const auto& pixel : pixels) {
       ASSERT_EQ(pixel, backgroundColorHex);
     }
   });
 }
 
-} // namespace tests
-} // namespace igl
+TEST_F(RenderCommandEncoderTest, shouldDrawATriangleBindGroup) {
+#if IGL_PLATFORM_APPLE
+  if (iglDev_->getBackendType() == igl::BackendType::Vulkan) {
+    // @fb-only
+    GTEST_SKIP() << "Broken on macOS arm64";
+    return;
+  }
+#endif
+
+  initializeBuffers(
+      // clang-format off
+      {
+        -1.0f - quarterPixel, -1.0f,                0.0f, 1.0f,
+         1.0f,                -1.0f,                0.0f, 1.0f,
+         1.0f,                 1.0f + quarterPixel, 0.0f, 1.0f,
+      },
+      {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        1.0f, 1.0f,
+      } // clang-format on
+  );
+
+  encodeAndSubmit(
+      [this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+        encoder->insertDebugEventLabel("Rendering a triangle...");
+        encoder->bindRenderPipelineState(renderPipelineState_Triangle_);
+        encoder->draw(3);
+      },
+      true);
+
+  auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
+  // clang-format off
+  std::vector<uint32_t> const expectedPixels {
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, grayColor,
+    backgroundColorHex, backgroundColorHex, grayColor,          grayColor,
+    backgroundColorHex, grayColor,          grayColor,          grayColor,
+    grayColor,          grayColor,          grayColor,          grayColor,
+  };
+
+  verifyFrameBuffer(expectedPixels);
+}
+
+TEST_F(RenderCommandEncoderTest, DepthBiasShouldDrawAPoint) {
+  initializeBuffers(
+      // clang-format off
+      { quarterPixel, quarterPixel, 0.0f, 1.0f },
+      { 0.5, 0.5 } // clang-format on
+  );
+
+  encodeAndSubmit([this](const std::unique_ptr<igl::IRenderCommandEncoder>& encoder) {
+    encoder->bindRenderPipelineState(renderPipelineState_Point_);
+    encoder->setDepthBias(0, 0, 0);
+    encoder->draw(1);
+  });
+
+  auto grayColor = data::texture::TEX_RGBA_GRAY_4x4[0];
+  // clang-format off
+  std::vector<uint32_t> const expectedPixels {
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
+    backgroundColorHex, backgroundColorHex, grayColor,          backgroundColorHex,
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
+    backgroundColorHex, backgroundColorHex, backgroundColorHex, backgroundColorHex,
+  };
+  // clang-format on
+
+  verifyFrameBuffer(expectedPixels);
+}
+
+} // namespace igl::tests

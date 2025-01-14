@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cstddef>
+
 #include "Texture.h"
 
 namespace igl::tests {
@@ -92,15 +94,16 @@ TEST_F(TextureTest, RenderToMip) {
     renderPass_.colorAttachments[0].mipLevel = mipLevel;
 
     auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, fb);
-    cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
     cmds->bindRenderPipelineState(pipelineState);
 
     cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
     cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-    cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+    cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+    cmds->drawIndexed(6);
 
     cmds->endEncoding();
 
@@ -345,7 +348,7 @@ TEST_F(TextureTest, GetEstimatedSizeInBytes) {
   const size_t formatBytes = iglDev_->getBackendType() == BackendType::OpenGL ? 2 : 4;
 
   size_t bytes;
-  bytes = static_cast<size_t>(12 * 34 * formatBytes);
+  bytes = (12 * 34 * formatBytes);
   ASSERT_EQ(calcSize(12, 34, format, 1), bytes);
   bytes = static_cast<size_t>((16 + 8 + 4 + 2 + 1) * formatBytes);
   ASSERT_EQ(calcSize(16, 1, format, 5), bytes);

@@ -7,11 +7,13 @@
 
 #pragma once
 
+#ifdef __ANDROID__
+
 #include <android/log.h>
 #include <shell/shared/fileLoader/FileLoader.h>
 #include <string>
 
-class AAssetManager;
+struct AAssetManager;
 
 namespace igl::shell {
 
@@ -20,19 +22,21 @@ class FileLoaderAndroid final : public FileLoader {
   FileLoaderAndroid() = default;
   ~FileLoaderAndroid() override = default;
   FileData loadBinaryData(const std::string& fileName) override;
-  bool fileExists(const std::string& fileName) const override;
-  std::string basePath() const override;
-  std::string fullPath(const std::string& fileName) const override;
+  [[nodiscard]] bool fileExists(const std::string& fileName) const override;
+  [[nodiscard]] std::string basePath() const override;
+  [[nodiscard]] std::string fullPath(const std::string& fileName) const override;
 
   void setAssetManager(AAssetManager* mgr) {
     assetManager_ = mgr;
   }
-  AAssetManager* getAssetManager() const noexcept {
+  [[nodiscard]] AAssetManager* getAssetManager() const noexcept {
     return assetManager_;
   }
 
  private:
-  AAssetManager* assetManager_;
+  AAssetManager* assetManager_{};
 };
 
 } // namespace igl::shell
+
+#endif

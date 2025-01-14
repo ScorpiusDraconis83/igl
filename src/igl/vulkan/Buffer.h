@@ -10,8 +10,7 @@
 #include <igl/Buffer.h>
 #include <igl/vulkan/Common.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 class Device;
 class VulkanBuffer;
@@ -33,31 +32,33 @@ class Buffer final : public igl::IBuffer {
 
   void unmap() override;
 
-  BufferDesc::BufferAPIHint requestedApiHints() const noexcept override;
-  BufferDesc::BufferAPIHint acceptedApiHints() const noexcept override;
-  ResourceStorage storage() const noexcept override;
+  [[nodiscard]] BufferDesc::BufferAPIHint requestedApiHints() const noexcept override;
+  [[nodiscard]] BufferDesc::BufferAPIHint acceptedApiHints() const noexcept override;
+  [[nodiscard]] ResourceStorage storage() const noexcept override;
 
-  size_t getSizeInBytes() const override;
-  uint64_t gpuAddress(size_t offset) const override;
+  [[nodiscard]] size_t getSizeInBytes() const override;
+  [[nodiscard]] uint64_t gpuAddress(size_t offset) const override;
 
-  BufferDesc::BufferType getBufferType() const override {
+  [[nodiscard]] BufferDesc::BufferType getBufferType() const override {
     return desc_.type;
   }
 
-  VkBuffer getVkBuffer() const;
+  [[nodiscard]] VkBuffer getVkBuffer() const;
+  [[nodiscard]] VkBufferUsageFlags getBufferUsageFlags() const;
 
   /// @brief Returns the current active VulkanBuffer object managed by this class. Since this class
   /// may be used as a Ring Buffer, the active buffer is the buffer currently being accessed.
-  [[nodiscard]] const std::shared_ptr<VulkanBuffer>& currentVulkanBuffer() const;
+  [[nodiscard]] const std::unique_ptr<VulkanBuffer>& currentVulkanBuffer() const;
 
  private:
   const igl::vulkan::Device& device_;
   BufferDesc desc_;
   bool isRingBuffer_ = false;
   uint32_t previousBufferIndex_ = UINT32_MAX;
-  std::vector<std::shared_ptr<VulkanBuffer>> buffers_;
+  std::unique_ptr<std::unique_ptr<VulkanBuffer>[]> buffers_;
   std::unique_ptr<uint8_t[]> localData_;
-  std::vector<BufferRange> bufferPatches_;
+  std::unique_ptr<BufferRange[]> bufferPatches_;
+  uint32_t bufferCount_ = 0;
 
   Result create(const BufferDesc& desc);
 
@@ -73,5 +74,4 @@ class Buffer final : public igl::IBuffer {
   BufferDesc::BufferAPIHint requestedApiHints_ = 0;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

@@ -12,8 +12,12 @@
 #include <igl/vulkan/VulkanContext.h>
 #include <igl/vulkan/VulkanSwapchain.h>
 
-namespace igl {
-namespace vulkan {
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+#include <android/hardware_buffer.h>
+#include <igl/vulkan/android/NativeHWBuffer.h>
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+
+namespace igl::vulkan {
 
 PlatformDevice::PlatformDevice(Device& device) : device_(device) {}
 
@@ -23,7 +27,7 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDepth(uint32_t 
   IGL_PROFILER_FUNCTION();
 
   const auto& ctx = device_.getVulkanContext();
-  auto& swapChain = ctx.swapchain_;
+  const auto& swapChain = ctx.swapchain_;
 
   if (!ctx.hasSwapchain()) {
     nativeDepthTexture_ = nullptr;
@@ -33,16 +37,15 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDepth(uint32_t 
 
   std::shared_ptr<VulkanTexture> vkTex = swapChain->getCurrentDepthTexture();
 
-  if (!IGL_VERIFY(vkTex != nullptr)) {
+  if (!IGL_DEBUG_VERIFY(vkTex != nullptr)) {
     Result::setResult(outResult, Result::Code::InvalidOperation, "Swapchain has no valid texture");
     return nullptr;
   }
 
-  IGL_ASSERT_MSG(vkTex->getVulkanImage().imageFormat_ != VK_FORMAT_UNDEFINED,
-                 "Invalid image format");
+  IGL_DEBUG_ASSERT(vkTex->image_.imageFormat_ != VK_FORMAT_UNDEFINED, "Invalid image format");
 
-  const auto iglFormat = vkFormatToTextureFormat(vkTex->getVulkanImage().imageFormat_);
-  if (!IGL_VERIFY(iglFormat != igl::TextureFormat::Invalid)) {
+  const auto iglFormat = vkFormatToTextureFormat(vkTex->image_.imageFormat_);
+  if (!IGL_DEBUG_VERIFY(iglFormat != igl::TextureFormat::Invalid)) {
     Result::setResult(outResult, Result::Code::RuntimeError, "Invalid surface depth format");
     return nullptr;
   }
@@ -76,20 +79,19 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDrawable(Result
     return nullptr;
   };
 
-  auto& swapChain = ctx.swapchain_;
+  const auto& swapChain = ctx.swapchain_;
 
-  std::shared_ptr<VulkanTexture> vkTex = swapChain->getCurrentVulkanTexture();
+  auto vkTex = swapChain->getCurrentVulkanTexture();
 
-  if (!IGL_VERIFY(vkTex != nullptr)) {
+  if (!IGL_DEBUG_VERIFY(vkTex != nullptr)) {
     Result::setResult(outResult, Result::Code::InvalidOperation, "Swapchain has no valid texture");
     return nullptr;
   }
 
-  IGL_ASSERT_MSG(vkTex->getVulkanImage().imageFormat_ != VK_FORMAT_UNDEFINED,
-                 "Invalid image format");
+  IGL_DEBUG_ASSERT(vkTex->image_.imageFormat_ != VK_FORMAT_UNDEFINED, "Invalid image format");
 
-  const auto iglFormat = vkFormatToTextureFormat(vkTex->getVulkanImage().imageFormat_);
-  if (!IGL_VERIFY(iglFormat != igl::TextureFormat::Invalid)) {
+  const igl::TextureFormat iglFormat = vkFormatToTextureFormat(vkTex->image_.imageFormat_);
+  if (!IGL_DEBUG_VERIFY(iglFormat != igl::TextureFormat::Invalid)) {
     Result::setResult(outResult, Result::Code::RuntimeError, "Invalid surface color format");
     return nullptr;
   }
@@ -119,6 +121,44 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDrawable(Result
 
   return nativeDrawableTextures_[currentImageIndex];
 }
+
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+/// returns a android::NativeHWTextureBuffer on platforms supporting it
+/// this texture allows CPU and GPU to both read/write memory
+std::shared_ptr<ITexture> PlatformDevice::createTextureWithSharedMemory(const TextureDesc& desc,
+                                                                        Result* outResult) const {
+  Result subResult;
+
+  auto texture =
+      std::make_shared<igl::vulkan::android::NativeHWTextureBuffer>(device_, desc.format);
+  subResult = texture->createHWBuffer(desc, false, false);
+  Result::setResult(outResult, subResult.code, subResult.message);
+  if (!subResult.isOk()) {
+    return nullptr;
+  }
+
+  return std::move(texture);
+}
+
+std::shared_ptr<ITexture> PlatformDevice::createTextureWithSharedMemory(
+    struct AHardwareBuffer* buffer,
+    Result* outResult) const {
+  Result subResult;
+
+  AHardwareBuffer_Desc hwbDesc;
+  AHardwareBuffer_describe(buffer, &hwbDesc);
+
+  auto texture = std::make_shared<igl::vulkan::android::NativeHWTextureBuffer>(
+      device_, igl::android::getIglFormat(hwbDesc.format));
+  subResult = texture->attachHWBuffer(buffer);
+  Result::setResult(outResult, subResult.code, subResult.message);
+  if (!subResult.isOk()) {
+    return nullptr;
+  }
+
+  return std::move(texture);
+}
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
 
 VkFence PlatformDevice::getVkFenceFromSubmitHandle(SubmitHandle handle) const {
   if (handle == 0) {
@@ -154,7 +194,7 @@ int PlatformDevice::getFenceFdFromSubmitHandle(SubmitHandle handle) const {
   }
 
   VkFence vkFence = getVkFenceFromSubmitHandle(handle);
-  IGL_ASSERT(vkFence != VK_NULL_HANDLE);
+  IGL_DEBUG_ASSERT(vkFence != VK_NULL_HANDLE);
 
   VkFenceGetFdInfoKHR getFdInfo = {};
   getFdInfo.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
@@ -164,7 +204,7 @@ int PlatformDevice::getFenceFdFromSubmitHandle(SubmitHandle handle) const {
   int fenceFd = -1;
   const auto& ctx = device_.getVulkanContext();
   VkDevice vkDevice = ctx.device_->getVkDevice();
-  VkResult result = ctx.vf_.vkGetFenceFdKHR(vkDevice, &getFdInfo, &fenceFd);
+  const VkResult result = ctx.vf_.vkGetFenceFdKHR(vkDevice, &getFdInfo, &fenceFd);
   if (result != VK_SUCCESS) {
     IGL_LOG_ERROR("Unable to get fence fd from submit handle: %lu", handle);
   }
@@ -173,5 +213,4 @@ int PlatformDevice::getFenceFdFromSubmitHandle(SubmitHandle handle) const {
 }
 #endif // defined(IGL_PLATFORM_ANDROID)
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

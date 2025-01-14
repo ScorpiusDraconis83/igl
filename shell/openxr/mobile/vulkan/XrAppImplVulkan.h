@@ -7,31 +7,31 @@
 
 #pragma once
 
-#include <array>
-
-#include <android/native_window_jni.h>
-
-#define VK_USE_PLATFORM_ANDROID_KHR
-#include <igl/vulkan/Common.h>
-
-#define XR_USE_GRAPHICS_API_VULKAN
-#include <openxr/openxr_platform.h>
-
+#include <shell/openxr/XrPlatform.h>
 #include <shell/openxr/impl/XrAppImpl.h>
+#include <shell/shared/renderSession/RenderSessionConfig.h>
+#include <vector>
 
 namespace igl::shell::openxr::mobile {
-class XrSwapchainProvider;
-class XrAppImplVulkan final : public impl::XrAppImpl {
+
+class XrAppImplVulkan : public impl::XrAppImpl {
  public:
-  std::vector<const char*> getXrRequiredExtensions() const override;
-  std::unique_ptr<igl::IDevice> initIGL(XrInstance instance, XrSystemId systemId) override;
-  XrSession initXrSession(XrInstance instance, XrSystemId systemId, igl::IDevice& device) override;
-  std::unique_ptr<impl::XrSwapchainProviderImpl> createSwapchainProviderImpl() const override;
+  [[nodiscard]] RenderSessionConfig suggestedSessionConfig() const override;
+  [[nodiscard]] std::vector<const char*> getXrRequiredExtensions() const override;
+  [[nodiscard]] std::vector<const char*> getXrOptionalExtensions() const override;
+
+  [[nodiscard]] std::unique_ptr<igl::IDevice> initIGL(XrInstance instance,
+                                                      XrSystemId systemId) override;
+  [[nodiscard]] XrSession initXrSession(XrInstance instance,
+                                        XrSystemId systemId,
+                                        igl::IDevice& device,
+                                        const RenderSessionConfig& sessionConfig) override;
+  [[nodiscard]] std::unique_ptr<impl::XrSwapchainProviderImpl> createSwapchainProviderImpl()
+      const override;
 
  private:
   std::vector<const char*> processExtensionsBuffer(std::vector<char>& buffer);
 
- private:
   XrGraphicsRequirementsVulkanKHR graphicsRequirements_ = {
       .type = XR_TYPE_GRAPHICS_REQUIREMENTS_VULKAN_KHR,
   };
@@ -41,5 +41,6 @@ class XrAppImplVulkan final : public impl::XrAppImpl {
 
   std::vector<const char*> requiredVkDeviceExtensions_;
   std::vector<char> requiredVkDeviceExtensionsBuffer_;
+  RenderSessionConfig sessionConfig_;
 };
 } // namespace igl::shell::openxr::mobile

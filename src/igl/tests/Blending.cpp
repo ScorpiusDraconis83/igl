@@ -15,11 +15,9 @@
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
 #include <igl/NameHandle.h>
-#include <igl/opengl/Device.h>
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 // The test will render to a texture with two overlapping quads.
 // Each test will use different blending operations
@@ -54,11 +52,11 @@ class BlendingTest : public ::testing::Test {
     ASSERT_TRUE(cmdQueue_ != nullptr);
 
     // Create an offscreen texture to render to
-    TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                             OFFSCREEN_TEX_WIDTH,
-                                             OFFSCREEN_TEX_HEIGHT,
-                                             TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
+    const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                   OFFSCREEN_TEX_WIDTH,
+                                                   OFFSCREEN_TEX_HEIGHT,
+                                                   TextureDesc::TextureUsageBits::Sampled |
+                                                       TextureDesc::TextureUsageBits::Attachment);
 
     Result ret;
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
@@ -138,16 +136,16 @@ class BlendingTest : public ::testing::Test {
     ASSERT_TRUE(uv_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
 
     // Create input textures
-    TextureDesc inputTexDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                                  OFFSCREEN_TEX_WIDTH,
-                                                  OFFSCREEN_TEX_HEIGHT,
-                                                  TextureDesc::TextureUsageBits::Sampled);
+    const TextureDesc inputTexDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                        OFFSCREEN_TEX_WIDTH,
+                                                        OFFSCREEN_TEX_HEIGHT,
+                                                        TextureDesc::TextureUsageBits::Sampled);
     inputTexture1_ = iglDev_->createTexture(texDesc, &ret);
     inputTexture2_ = iglDev_->createTexture(texDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
@@ -232,21 +230,23 @@ TEST_F(BlendingTest, RGBASrcAndDstAddTest) {
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   // Bind pipeline
   cmds->bindRenderPipelineState(pipelineState1);
 
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+
   // Draw half red texture
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture1_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->drawIndexed(6);
 
   // Draw half blue texture
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture2_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
 
@@ -273,5 +273,4 @@ TEST_F(BlendingTest, RGBASrcAndDstAddTest) {
   }
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

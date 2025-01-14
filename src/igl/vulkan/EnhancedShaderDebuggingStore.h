@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <memory>
@@ -19,15 +21,12 @@
 
 namespace igl {
 
-class IBuffer;
-class IDepthStencilState;
-class IFramebuffer;
 class IRenderPipelineState;
 
 namespace vulkan {
 
+class CommandQueue;
 class Device;
-class Framebuffer;
 class VulkanContext;
 class VulkanExtensions;
 
@@ -74,7 +73,7 @@ class EnhancedShaderDebuggingStore {
   explicit EnhancedShaderDebuggingStore();
 
   /** @brief Initialize the object and stores the `Device` needed to create resources */
-  void initialize(const igl::vulkan::Device* device);
+  void initialize(igl::vulkan::Device* device);
 
   /** @brief Returns the shader code that stores the line vertices in the buffer. This code can be
    * injected into all shaders compiled by the device.
@@ -101,7 +100,7 @@ class EnhancedShaderDebuggingStore {
   /** @brief If a framebuffer has been been created with the resolveAttachment as a color attachment
    * the cached framebuffer is returned. Otherwise a new one will be created and returned.
    */
-  std::shared_ptr<igl::IFramebuffer> framebuffer(
+  const std::shared_ptr<igl::IFramebuffer>& framebuffer(
       igl::vulkan::Device& device,
       const std::shared_ptr<igl::ITexture>& resolveAttachment) const;
 
@@ -118,13 +117,12 @@ class EnhancedShaderDebuggingStore {
    * render pass and the line drawing pass */
   void installBufferBarrier(const igl::ICommandBuffer& commandBuffer) const;
 
+  /// @brief Executes the shader debugging render pass. Also presents the image if the command
+  /// buffer being submitted was from a swapchain.
+  void enhancedShaderDebuggingPass(igl::vulkan::CommandQueue& queue,
+                                   igl::vulkan::CommandBuffer* cmdBuffer);
+
  private:
-  /** @brief Initializes the vertex buffer */
-  void initializeBuffer() const;
-
-  /** @brief Initializes the depth stencil state */
-  void initializeDepthState() const;
-
   /** @brief Vertex shader code to render the lines */
   std::string renderLineVSCode() const;
 
@@ -137,7 +135,7 @@ class EnhancedShaderDebuggingStore {
 
  private:
   bool enabled_ = false;
-  const igl::vulkan::Device* device_ = nullptr;
+  igl::vulkan::Device* device_ = nullptr;
   mutable std::shared_ptr<igl::IBuffer> vertexBuffer_;
   mutable std::shared_ptr<igl::IDepthStencilState> depthStencilState_;
 
@@ -146,8 +144,8 @@ class EnhancedShaderDebuggingStore {
   mutable std::unordered_map<uint64_t, std::shared_ptr<igl::IRenderPipelineState>> pipelineStates_;
 
   mutable std::shared_ptr<IShaderStages> shaderStage_;
-  mutable std::shared_ptr<IShaderModule> vertexShaderModule_;
-  mutable std::shared_ptr<IShaderModule> fragmentShaderModule_;
+  std::shared_ptr<IShaderModule> vertexShaderModule_;
+  std::shared_ptr<IShaderModule> fragmentShaderModule_;
 };
 
 } // namespace vulkan

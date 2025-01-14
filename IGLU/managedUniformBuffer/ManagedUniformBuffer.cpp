@@ -5,11 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#if defined(IGL_UWP_VS_FIX)
-#include <igl/IGLU/managedUniformBuffer/ManagedUniformBuffer.h>
-#else
 #include <IGLU/managedUniformBuffer/ManagedUniformBuffer.h>
-#endif
 
 #include <cstdlib>
 #include <igl/Macros.h>
@@ -36,7 +32,7 @@ ManagedUniformBuffer::ManagedUniformBuffer(igl::IDevice& device,
   igl::BufferDesc desc;
   desc.length = info.length;
 
-  if (!IGL_VERIFY(desc.length != 0)) {
+  if (!IGL_DEBUG_VERIFY(desc.length != 0)) {
     result.code = igl::Result::Code::ArgumentInvalid;
     return;
   }
@@ -120,13 +116,6 @@ ManagedUniformBuffer::~ManagedUniformBuffer() {
 void ManagedUniformBuffer::bind(const igl::IDevice& device,
                                 const igl::IRenderPipelineState& pipelineState,
                                 igl::IRenderCommandEncoder& encoder) {
-  bind(device, pipelineState, encoder, igl::BindTarget::kVertex | igl::BindTarget::kFragment);
-}
-
-void ManagedUniformBuffer::bind(const igl::IDevice& device,
-                                const igl::IRenderPipelineState& pipelineState,
-                                igl::IRenderCommandEncoder& encoder,
-                                uint8_t bindTarget) {
   if (device.getBackendType() == igl::BackendType::OpenGL) {
 #if IGL_BACKEND_OPENGL && !IGL_PLATFORM_MACCATALYST
     for (auto& uniform : uniformInfo.uniforms) {
@@ -143,11 +132,11 @@ void ManagedUniformBuffer::bind(const igl::IDevice& device,
       }
     }
 #else
-    IGL_ASSERT_MSG(0, "Should not use OpenGL backend on Mac Catalyst, use Metal instead\n");
+    IGL_DEBUG_ABORT("Should not use OpenGL backend on Mac Catalyst, use Metal instead\n");
 #endif
   } else {
     if (useBindBytes_) {
-      encoder.bindBytes(uniformInfo.index, bindTarget, data_, length_);
+      encoder.bindBytes(uniformInfo.index, igl::BindTarget::kAllGraphics, data_, length_);
     } else {
       // Need to ensure the latest data is present in the buffer
       // TODO: Have callers handle this when data has changed.
@@ -156,14 +145,23 @@ void ManagedUniformBuffer::bind(const igl::IDevice& device,
         data = nullptr;
       }
       buffer_->upload(data, {buffer_->getSizeInBytes(), 0});
-      encoder.bindBuffer(uniformInfo.index, bindTarget, buffer_, 0);
+      encoder.bindBuffer(uniformInfo.index, buffer_.get());
     }
   }
 }
 
-void ManagedUniformBuffer::bind(const igl::IDevice& device, igl::IComputeCommandEncoder& encoder) {
+void ManagedUniformBuffer::bind(const igl::IDevice& device,
+                                const igl::IComputePipelineState& pipelineState,
+                                igl::IComputeCommandEncoder& encoder) {
   if (device.getBackendType() == igl::BackendType::OpenGL) {
-    IGL_ASSERT_MSG(0, "No ComputeEncoder supported for OpenGL\n");
+    for (auto& uniform : uniformInfo.uniforms) {
+      uniform.location = pipelineState.getIndexByName(igl::genNameHandle(uniform.name));
+      if (uniform.location >= 0) {
+        encoder.bindUniform(uniform, data_);
+      } else {
+        IGL_LOG_ERROR_ONCE("The uniform %s was not found in shader\n", uniform.name.c_str());
+      }
+    }
   } else {
     if (useBindBytes_) {
       encoder.bindBytes(uniformInfo.index, data_, length_);
@@ -175,7 +173,7 @@ void ManagedUniformBuffer::bind(const igl::IDevice& device, igl::IComputeCommand
         data = nullptr;
       }
       buffer_->upload(data, {buffer_->getSizeInBytes(), 0});
-      encoder.bindBuffer(uniformInfo.index, buffer_, 0);
+      encoder.bindBuffer(static_cast<uint32_t>(uniformInfo.index), buffer_.get());
     }
   }
 }
@@ -202,7 +200,7 @@ static int findUniformByName(const std::vector<igl::UniformDesc>& uniforms, cons
 }
 
 bool ManagedUniformBuffer::updateData(const char* name, const void* data, size_t dataSize) {
-  IGL_ASSERT(name);
+  IGL_DEBUG_ASSERT(name);
 
   int index = -1;
   if (uniformLUT_) {
@@ -219,7 +217,7 @@ bool ManagedUniformBuffer::updateData(const char* name, const void* data, size_t
       // This could mean the user knows only a portion of the uniform data needs updating
       // However, if dataSize is larger than or equal to what we expect for this uniform, we will
       // only copy data up to the expected data size for this uniform
-      size_t uniformDataSize = getUniformDataSizeInternal(uniform);
+      const size_t uniformDataSize = getUniformDataSizeInternal(uniform);
       if (dataSize > uniformDataSize) {
         dataSize = uniformDataSize;
 #if IGL_DEBUG
@@ -233,7 +231,9 @@ bool ManagedUniformBuffer::updateData(const char* name, const void* data, size_t
       return true;
     }
   }
-  IGL_ASSERT_MSG(0, "call to updateData: uniform with name %s not found, skipping update\n");
+#ifndef GTEST
+  IGL_DEBUG_ABORT("call to updateData: uniform with name %s not found, skipping update\n", name);
+#endif
   return false;
 }
 
@@ -247,9 +247,9 @@ size_t ManagedUniformBuffer::getUniformDataSize(const char* name) {
 }
 
 size_t ManagedUniformBuffer::getUniformDataSizeInternal(igl::UniformDesc& uniform) {
-  size_t uniformDataSize = uniform.elementStride != 0
-                               ? uniform.numElements * uniform.elementStride
-                               : uniform.numElements * igl::sizeForUniformType(uniform.type);
+  const size_t uniformDataSize = uniform.elementStride != 0
+                                     ? uniform.numElements * uniform.elementStride
+                                     : uniform.numElements * igl::sizeForUniformType(uniform.type);
   return uniformDataSize;
 }
 

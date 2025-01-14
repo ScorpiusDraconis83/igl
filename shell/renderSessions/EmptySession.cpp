@@ -5,10 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include "EmptySession.h"
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 void EmptySession::initialize() noexcept {
   getPlatform().getDevice();
@@ -16,5 +17,4 @@ void EmptySession::initialize() noexcept {
 
 void EmptySession::update(igl::SurfaceTextures surfaceTextures) noexcept {}
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

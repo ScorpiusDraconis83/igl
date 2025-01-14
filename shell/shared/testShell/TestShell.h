@@ -7,16 +7,14 @@
 
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
-#include <iglu/device/MetalFactory.h>
-#include <iglu/device/OpenGLFactory.h>
 #include <memory>
 #include <shell/shared/renderSession/RenderSession.h>
 
 namespace igl::shell {
 
 struct ScreenSize {
-  uint width;
-  uint height;
+  size_t width;
+  size_t height;
 };
 
 class TestShellBase {
@@ -27,7 +25,7 @@ class TestShellBase {
 
   void SetUp(ScreenSize screenSize = {1, 1});
 
-  void TearDown(){};
+  void TearDown() {};
 
   std::shared_ptr<igl::shell::Platform> platform_;
   std::shared_ptr<igl::ITexture> offscreenTexture_;
@@ -42,7 +40,7 @@ class TestShell : public ::testing::Test, public igl::shell::TestShellBase {
 
   void TearDown() override {
     igl::shell::TestShellBase::TearDown();
-  };
+  }
 
   void run(igl::shell::RenderSession& session, size_t numFrames);
 };

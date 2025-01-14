@@ -32,8 +32,8 @@ class NetService {
   virtual ~NetService() = default;
   virtual void publish() noexcept = 0;
 
-  virtual std::shared_ptr<InputStream> getInputStream() const noexcept = 0;
-  virtual std::shared_ptr<OutputStream> getOutputStream() const noexcept = 0;
+  [[nodiscard]] virtual std::shared_ptr<InputStream> getInputStream() const noexcept = 0;
+  [[nodiscard]] virtual std::shared_ptr<OutputStream> getOutputStream() const noexcept = 0;
   [[nodiscard]] virtual std::string getName() const noexcept = 0;
 
   [[nodiscard]] Delegate* delegate() const noexcept {
@@ -41,7 +41,7 @@ class NetService {
   }
 
   void setDelegate(std::unique_ptr<Delegate> delegate) noexcept {
-    IGL_ASSERT(delegate && delegate.get());
+    IGL_DEBUG_ASSERT(delegate && delegate.get());
     delegate_ = std::move(delegate);
   }
 

@@ -5,23 +5,24 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #include "ShaderProgram.h"
 
 #include <utility>
 
 #include <igl/NameHandle.h>
 
-namespace iglu {
-namespace material {
+namespace iglu::material {
 
-#define CHECK_RESULT(res, outResPtr)                \
-  if (!res.isOk()) {                                \
-    if (outResPtr != nullptr) {                     \
-      *outResPtr = res;                             \
-    } else {                                        \
-      IGL_ASSERT_MSG(0, "%s", res.message.c_str()); \
-    }                                               \
-    return;                                         \
+#define CHECK_RESULT(res, outResPtr)              \
+  if (!res.isOk()) {                              \
+    if (outResPtr != nullptr) {                   \
+      *outResPtr = res;                           \
+    } else {                                      \
+      IGL_DEBUG_ABORT("%s", res.message.c_str()); \
+    }                                             \
+    return;                                       \
   }
 
 ShaderProgram::ShaderProgram(igl::IDevice& device,
@@ -71,5 +72,4 @@ void ShaderProgram::populatePipelineDescriptor(igl::RenderPipelineDesc& pipeline
   }
 }
 
-} // namespace material
-} // namespace iglu
+} // namespace iglu::material

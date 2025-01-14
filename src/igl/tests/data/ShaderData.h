@@ -8,12 +8,12 @@
 #pragma once
 
 #include <cstddef> // For size_t/
+#include <igl/Macros.h>
+#if IGL_BACKEND_OPENGL
 #include <igl/opengl/Macros.h>
+#endif // IGL_BACKEND_OPENGL
 
-namespace igl {
-namespace tests {
-namespace data {
-namespace shader {
+namespace igl::tests::data::shader {
 
 //-----------------------------------------------------------------------------
 // Defines names of inputs and functions for the shaders in this file
@@ -582,8 +582,20 @@ const char VULKAN_SIMPLE_FRAG_SHADER_MULTIVIEW[] =
         out_FragColor = color_in;
       });
 
+const char VULKAN_SIMPLE_COMPUTE_SHADER[] =
+  IGL_TO_STRING(
+        layout (local_size_x = 6, local_size_y = 1, local_size_z = 1) in;
+        layout (std430, binding = 0, set = 1) readonly buffer floatsIn {
+          float fIn[];
+        };
+        layout (std430, binding = 1, set = 1) writeonly buffer floatsOut {
+          float fOut[];
+        };
+
+        void main() {
+            uint id = gl_LocalInvocationIndex;
+
+            fOut[id] = fIn[id] * 2.0f;
+        });
 // clang-format on
-} // namespace shader
-} // namespace data
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests::data::shader

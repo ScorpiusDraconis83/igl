@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #import "GLView.h"
 
 #import "AppDelegate.h"
@@ -64,11 +66,11 @@
   [self startTimer];
 }
 
-static CVReturn DisplayLinkCallback(CVDisplayLinkRef displayLink,
-                                    const CVTimeStamp* now,
-                                    const CVTimeStamp* outputTime,
-                                    CVOptionFlags flagsIn,
-                                    CVOptionFlags* flagsOut,
+static CVReturn DisplayLinkCallback(CVDisplayLinkRef /*displayLink*/,
+                                    const CVTimeStamp* /*now*/,
+                                    const CVTimeStamp* /*outputTime*/,
+                                    CVOptionFlags /*flagsIn*/,
+                                    CVOptionFlags* /*flagsOut*/,
                                     void* userdata) {
   // TODO: For some reason, OpenGL is crashing when called from display link thread
   // so we use setNeedsDisplay for now.

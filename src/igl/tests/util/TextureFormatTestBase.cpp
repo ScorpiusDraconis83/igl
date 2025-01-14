@@ -29,6 +29,7 @@ void TextureFormatTestBase::SetUp() {
                                            OFFSCREEN_TEX_WIDTH,
                                            OFFSCREEN_TEX_HEIGHT,
                                            TextureDesc::TextureUsageBits::Sampled);
+  texDesc.debugName = "TextureFormatTestBase rgba unorm8 sampled";
 
   Result ret;
   sampledTexture_ = iglDev_->createTexture(texDesc, &ret);
@@ -190,9 +191,15 @@ void TextureFormatTestBase::render(std::shared_ptr<ITexture> sampledTexture,
   ASSERT_TRUE(ret.isOk()) << testProperties.name << ": " << ret.message;
   ASSERT_TRUE(framebuffer != nullptr);
 
-  auto cmds = cmdBuf->createRenderCommandEncoder(renderPass_, framebuffer);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  // Add sampled textures as dependencies so that their layout is transitioned correctly for Vulkan
+  igl::Dependencies dep;
+  dep.textures[0] = sampledTexture.get();
+
+  igl::Result result;
+  auto cmds = cmdBuf->createRenderCommandEncoder(renderPass_, framebuffer, dep, &result);
+  ASSERT_TRUE(result.isOk());
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   // Create createFramebuffer fills in proper texture formats and shader stages in
   // renderPipelineDesc_
@@ -209,7 +216,8 @@ void TextureFormatTestBase::render(std::shared_ptr<ITexture> sampledTexture,
                          BindTarget::kFragment,
                          (linearSampling ? linearSampler_ : nearestSampler_).get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
 
@@ -277,6 +285,7 @@ std::vector<std::pair<TextureFormat, bool>> TextureFormatTestBase::getFormatSupp
   formatSupport.emplace_back(checkSupport(TextureFormat::R_F32, usage));
   formatSupport.emplace_back(checkSupport(TextureFormat::RGB_F16, usage));
   formatSupport.emplace_back(checkSupport(TextureFormat::RGBA_F16, usage));
+  formatSupport.emplace_back(checkSupport(TextureFormat::RG_F32, usage));
   formatSupport.emplace_back(checkSupport(TextureFormat::RGB_F32, usage));
   formatSupport.emplace_back(checkSupport(TextureFormat::RGBA_UInt32, usage));
   formatSupport.emplace_back(checkSupport(TextureFormat::RGBA_F32, usage));
@@ -339,8 +348,13 @@ void TextureFormatTestBase::testUpload(std::shared_ptr<ITexture> texture) {
   const auto size = texture->getEstimatedSizeInBytes();
   std::vector<uint8_t> data(size);
   const auto range = texture->getFullRange();
-  Result result = texture->upload(range, data.data());
+  const Result result = texture->upload(range, data.data());
   ASSERT_TRUE(result.isOk()) << texture->getProperties().name;
+  // flush upload
+  Result ret;
+  auto cmdBuf = cmdQueue_->createCommandBuffer(CommandBufferDesc{}, &ret);
+  cmdQueue_->submit(*cmdBuf);
+  cmdBuf->waitUntilCompleted();
 }
 
 // Attempts to render into texture.

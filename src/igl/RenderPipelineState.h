@@ -167,6 +167,11 @@ struct RenderPipelineDesc {
   };
 
   /*
+   * @brief Describes the primitive topology for this graphics pipeline
+   */
+  PrimitiveType topology = PrimitiveType::Triangle;
+
+  /*
    * @brief Describes the organization of per-vertex input data passed to a vertex shader function
    */
   std::shared_ptr<IVertexInputState> vertexInputState;
@@ -189,16 +194,23 @@ struct RenderPipelineDesc {
   std::unordered_map<size_t, igl::NameHandle> fragmentUnitSamplerMap;
 
   /*
-   * GL Only: Mapping of Uniform Block Binding points <-> Uniform Block Names
-   * Uniform Block Binding Point should be < IGL_UNIFORM_BLOCKS_BINDING_MAX
-   * Names are a pair as, depending on shader implementation, OpenGL reflection
-   * may find a block by its block name or its instance name.
-   *
+   * GL Only:
+   * Maps block binding points to vectors of (BlockName, blockInstanceName) pairs of all uniform
+   * blocks that should use this binding point.
+   * Uniform Block Binding Point should be < IGL_UNIFORM_BLOCKS_BINDING_MAX.
    * This should only be populated if explicit binding is not supported or used.
    */
-  std::unordered_map<size_t, std::pair<igl::NameHandle, igl::NameHandle>> uniformBlockBindingMap;
+  std::unordered_map<size_t, std::vector<std::pair<igl::NameHandle, igl::NameHandle>>>
+      uniformBlockBindingMap;
 
-  int sampleCount = 1;
+  uint32_t sampleCount = 1u; // MSAA
+
+  // Vulkan only: specify if buffer binding locations correspond to Vulkan dynamic buffers
+  uint32_t isDynamicBufferMask = 0; // one bit per each buffer
+
+  // Vulkan only: immutable samplers per each binding slot (for example, Ycbcr conversion etc)
+  // @fb-only
+  std::shared_ptr<ISamplerState> immutableSamplers[IGL_TEXTURE_SAMPLERS_MAX] = {};
 
   igl::NameHandle debugName;
 
@@ -208,7 +220,7 @@ struct RenderPipelineDesc {
 
 class IRenderPipelineState {
  public:
-  explicit IRenderPipelineState(const RenderPipelineDesc& desc) : desc_(desc) {}
+  explicit IRenderPipelineState(RenderPipelineDesc desc) : desc_(std::move(desc)) {}
   virtual ~IRenderPipelineState() = default;
 
   virtual std::shared_ptr<IRenderPipelineReflection> renderPipelineReflection() = 0;
@@ -239,17 +251,17 @@ namespace std {
 
 template<>
 struct hash<igl::RenderPipelineDesc> {
-  size_t operator()(igl::RenderPipelineDesc const& /*key*/) const;
+  size_t operator()(const igl::RenderPipelineDesc& /*key*/) const;
 };
 
 template<>
 struct hash<igl::RenderPipelineDesc::TargetDesc> {
-  size_t operator()(igl::RenderPipelineDesc::TargetDesc const& /*key*/) const;
+  size_t operator()(const igl::RenderPipelineDesc::TargetDesc& /*key*/) const;
 };
 
 template<>
 struct hash<igl::RenderPipelineDesc::TargetDesc::ColorAttachment> {
-  size_t operator()(igl::RenderPipelineDesc::TargetDesc::ColorAttachment const& /*key*/) const;
+  size_t operator()(const igl::RenderPipelineDesc::TargetDesc::ColorAttachment& /*key*/) const;
 };
 
 } // namespace std

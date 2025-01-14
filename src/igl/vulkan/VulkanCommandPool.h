@@ -8,10 +8,8 @@
 #pragma once
 
 #include <igl/vulkan/Common.h>
-#include <igl/vulkan/VulkanFunctions.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 /// @brief Wrapper around a Vulkan Command Pool (VkCommandPool)
 class VulkanCommandPool final {
@@ -32,7 +30,7 @@ class VulkanCommandPool final {
 
   ~VulkanCommandPool();
 
-  VkCommandPool getVkCommandPool() const {
+  [[nodiscard]] VkCommandPool getVkCommandPool() const {
     return commandPool_;
   }
 
@@ -43,5 +41,4 @@ class VulkanCommandPool final {
   VkCommandPool commandPool_ = VK_NULL_HANDLE;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

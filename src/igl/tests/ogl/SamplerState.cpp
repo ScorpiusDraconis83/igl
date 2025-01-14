@@ -13,8 +13,7 @@
 #include <igl/opengl/SamplerState.h>
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 #ifndef GL_CLAMP_TO_BORDER
 #define GL_CLAMP_TO_BORDER 0x812D
@@ -32,13 +31,14 @@ class SamplerStateOGLTest : public ::testing::Test {
     // Turn off debug break so unit tests can run
     igl::setDebugBreakEnabled(false);
 
-    auto device = util::createTestDevice();
-    context_ = &static_cast<opengl::Device&>(*device).getContext();
+    device_ = util::createTestDevice();
+    context_ = &static_cast<opengl::Device&>(*device_.get()).getContext();
 
     ASSERT_TRUE(context_ != nullptr);
   }
 
-  opengl::IContext* context_;
+  std::shared_ptr<::igl::IDevice> device_;
+  opengl::IContext* context_{};
 };
 
 //
@@ -159,5 +159,11 @@ TEST_F(SamplerStateOGLTest, SamplerStateConvertAddressMode) {
             GL_MIRRORED_REPEAT);
 }
 
-} // namespace tests
-} // namespace igl
+TEST_F(SamplerStateOGLTest, BindNullTexture) {
+  auto dummySamplerState =
+      std::make_unique<igl::opengl::SamplerState>(*context_, SamplerStateDesc::newLinear());
+  dummySamplerState->bind(nullptr);
+  EXPECT_TRUE(true); // Expect no crash
+}
+
+} // namespace igl::tests

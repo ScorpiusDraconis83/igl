@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <IGLU/simdtypes/SimdTypes.h>
@@ -12,22 +14,33 @@
 #include <shell/shared/platform/Platform.h>
 #include <shell/shared/renderSession/RenderSession.h>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 class ColorSession : public RenderSession {
   struct FragmentFormat {
     iglu::simdtypes::float3 color;
+    iglu::simdtypes::float4x4 mvp;
   };
 
  public:
-  ColorSession(std::shared_ptr<Platform> platform);
+  ColorSession(std::shared_ptr<Platform> platform) : RenderSession(std::move(platform)) {}
   // clang-tidy off
   void initialize() noexcept override;
   // clang-tidy on
   void update(igl::SurfaceTextures surfaceTextures) noexcept override;
 
+  enum class ColorTestModes {
+    eMacbethTexture,
+    eOrangeTexture,
+    eOrangeClear,
+  };
+  void setTestMode(ColorTestModes colorTestModes) noexcept {
+    colorTestModes_ = colorTestModes;
+  }
+
  private:
+  ColorTestModes colorTestModes_ = ColorTestModes::eMacbethTexture;
+
   std::shared_ptr<IRenderPipelineState> pipelineState_;
   std::shared_ptr<IVertexInputState> vertexInput0_;
   std::shared_ptr<ISamplerState> samp0_;
@@ -40,11 +53,10 @@ class ColorSession : public RenderSession {
   std::shared_ptr<ITexture> tex0_;
   RenderPassDesc renderPass_;
   // clang-tidy off
-  FragmentFormat fragmentParameters_;
+  FragmentFormat fragmentParameters_{};
   // clang-tidy on
   std::vector<UniformDesc> fragmentUniformDescriptors_;
   std::vector<UniformDesc> vertexUniformDescriptors_;
 };
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

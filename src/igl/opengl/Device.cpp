@@ -26,8 +26,7 @@
 #include <igl/opengl/UniformBuffer.h>
 #include <igl/opengl/VertexInputState.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 namespace {
 std::unique_ptr<Buffer> allocateBuffer(BufferDesc::BufferType bufferType,
@@ -37,6 +36,7 @@ std::unique_ptr<Buffer> allocateBuffer(BufferDesc::BufferType bufferType,
 
   if ((bufferType & BufferDesc::BufferTypeBits::Index) ||
       (bufferType & BufferDesc::BufferTypeBits::Vertex) ||
+      (bufferType & BufferDesc::BufferTypeBits::Indirect) ||
       (bufferType & BufferDesc::BufferTypeBits::Storage)) {
     resource = std::make_unique<ArrayBuffer>(context, requestedApiHints, bufferType);
   } else if (bufferType & BufferDesc::BufferTypeBits::Uniform) {
@@ -47,7 +47,7 @@ std::unique_ptr<Buffer> allocateBuffer(BufferDesc::BufferType bufferType,
     }
 
   } else {
-    IGL_ASSERT_NOT_REACHED(); // desc.type is corrupt or new enum type was introduced
+    IGL_DEBUG_ASSERT_NOT_REACHED(); // desc.type is corrupt or new enum type was introduced
   }
 
   return resource;
@@ -58,7 +58,7 @@ Ptr verifyResult(Ptr resource, Result inResult, Result* outResult) {
   if (inResult.isOk()) {
     Result::setOk(outResult);
   } else {
-    IGL_ASSERT_MSG(0, inResult.message.c_str());
+    IGL_DEBUG_ABORT(inResult.message.c_str());
     resource = {};
     Result::setResult(outResult, std::move(inResult));
   }
@@ -137,7 +137,7 @@ std::unique_ptr<IBuffer> Device::createBuffer(const BufferDesc& desc,
   if (resource) {
     resource->initialize(desc, outResult);
     if (getResourceTracker()) {
-      resource->initResourceTracker(getResourceTracker());
+      resource->initResourceTracker(getResourceTracker(), desc.debugName);
     }
   } else {
     Result::setResult(outResult, Result::Code::RuntimeError, "Could not instantiate buffer.");
@@ -156,7 +156,7 @@ std::shared_ptr<ISamplerState> Device::createSamplerState(const SamplerStateDesc
                                                           Result* outResult) const {
   auto resource = std::make_shared<SamplerState>(getContext(), desc);
   if (getResourceTracker()) {
-    resource->initResourceTracker(getResourceTracker());
+    resource->initResourceTracker(getResourceTracker(), desc.debugName);
   }
   Result::setOk(outResult);
   return resource;
@@ -171,11 +171,11 @@ std::shared_ptr<ITexture> Device::createTexture(const TextureDesc& desc,
   if (sanitized.type == TextureType::TwoD || sanitized.type == TextureType::TwoDArray) {
     size_t textureSizeLimit;
     getFeatureLimits(DeviceFeatureLimits::MaxTextureDimension1D2D, textureSizeLimit);
-    IGL_ASSERT_MSG(sanitized.width <= textureSizeLimit && sanitized.height <= textureSizeLimit,
-                   "Texture limit size %zu is smaller than texture size %zux%zu",
-                   textureSizeLimit,
-                   sanitized.width,
-                   sanitized.height);
+    IGL_DEBUG_ASSERT(sanitized.width <= textureSizeLimit && sanitized.height <= textureSizeLimit,
+                     "Texture limit size %zu is smaller than texture size %zux%zu",
+                     textureSizeLimit,
+                     sanitized.width,
+                     sanitized.height);
   }
 #endif
 
@@ -198,7 +198,7 @@ std::shared_ptr<ITexture> Device::createTexture(const TextureDesc& desc,
     if (!result.isOk()) {
       texture = nullptr;
     } else if (getResourceTracker()) {
-      texture->initResourceTracker(getResourceTracker());
+      texture->initResourceTracker(getResourceTracker(), desc.debugName);
     }
 
     Result::setResult(outResult, std::move(result));
@@ -209,7 +209,7 @@ std::shared_ptr<ITexture> Device::createTexture(const TextureDesc& desc,
 
   // sanity check to ensure that the Result value and the returned object are in sync
   // i.e. we never have a valid Result with a nullptr return value, or vice versa
-  IGL_ASSERT(outResult == nullptr || (outResult->isOk() == (texture != nullptr)));
+  IGL_DEBUG_ASSERT(outResult == nullptr || (outResult->isOk() == (texture != nullptr)));
 
   return texture;
 }
@@ -238,7 +238,7 @@ std::shared_ptr<IComputePipelineState> Device::createComputePipeline(
 std::unique_ptr<igl::IShaderLibrary> Device::createShaderLibrary(const ShaderLibraryDesc& /*desc*/,
                                                                  Result* outResult) const {
   Result::setResult(outResult, Result::Code::Unsupported);
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
   return nullptr;
 }
 
@@ -246,7 +246,7 @@ std::shared_ptr<IShaderModule> Device::createShaderModule(const ShaderModuleDesc
                                                           Result* outResult) const {
   auto sm = createSharedResource<ShaderModule>(desc, outResult, getContext(), desc.info);
   if (auto resourceTracker = getResourceTracker(); sm && resourceTracker) {
-    sm->initResourceTracker(resourceTracker);
+    sm->initResourceTracker(resourceTracker, desc.debugName);
   }
   return sm;
 }
@@ -258,14 +258,14 @@ std::unique_ptr<IShaderStages> Device::createShaderStages(const ShaderStagesDesc
   // The second instance is so it also gets passed to the ShaderStages constructor.
   auto stages = createUniqueResource<ShaderStages>(desc, outResult, desc, getContext());
   if (auto resourceTracker = getResourceTracker(); stages && resourceTracker) {
-    stages->initResourceTracker(resourceTracker);
+    stages->initResourceTracker(resourceTracker, desc.debugName);
   }
   return stages;
 }
 
 std::shared_ptr<IFramebuffer> Device::createFramebuffer(const FramebufferDesc& desc,
                                                         Result* outResult) {
-  IGL_ASSERT(deviceFeatureSet_.hasInternalFeature(InternalFeatures::FramebufferObject));
+  IGL_DEBUG_ASSERT(deviceFeatureSet_.hasInternalFeature(InternalFeatures::FramebufferObject));
   return getPlatformDevice().createFramebuffer(desc, outResult);
 }
 
@@ -287,14 +287,19 @@ ICapabilities::TextureFormatCapabilities Device::getTextureFormatCapabilities(
 }
 
 ShaderVersion Device::getShaderVersion() const {
-  IGL_ASSERT(context_);
+  IGL_DEBUG_ASSERT(context_);
   return deviceFeatureSet_.getShaderVersion();
+}
+
+BackendVersion Device::getBackendVersion() const {
+  IGL_DEBUG_ASSERT(context_);
+  return deviceFeatureSet_.getBackendVersion();
 }
 
 void Device::beginScope() {
   IDevice::beginScope();
 
-  IGL_ASSERT(context_);
+  IGL_DEBUG_ASSERT(context_);
   context_->setCurrent();
 
   // UnbindPolicy is fixed for duration of this scope
@@ -304,7 +309,7 @@ void Device::beginScope() {
 void Device::endScope() {
   if (cachedUnbindPolicy_ == UnbindPolicy::EndScope) {
     // Ensure state on exit is consistent, for any external rendering that happens later.
-    context_->colorMask(true, true, true, true);
+    context_->colorMask(1u, 1u, 1u, 1u);
     context_->blendFunc(GL_ONE, GL_ZERO);
     context_->bindBuffer(GL_ARRAY_BUFFER, 0);
     context_->bindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -323,7 +328,7 @@ void Device::endScope() {
 void Device::updateSurface(void* nativeWindowType) {}
 
 bool Device::verifyScope() {
-  IGL_ASSERT(context_);
+  IGL_DEBUG_ASSERT(context_);
   return IDevice::verifyScope() && context_->isCurrentContext();
 }
 
@@ -331,5 +336,67 @@ size_t Device::getCurrentDrawCount() const {
   return context_->getCurrentDrawCount();
 }
 
-} // namespace opengl
-} // namespace igl
+Holder<igl::BindGroupTextureHandle> Device::createBindGroup(
+    const BindGroupTextureDesc& desc,
+    const IRenderPipelineState* IGL_NULLABLE /*compatiblePipeline*/,
+    Result* IGL_NULLABLE outResult) {
+  IGL_DEBUG_ASSERT(context_);
+  IGL_DEBUG_ASSERT(!desc.debugName.empty(), "Each bind group should have a debug name");
+
+  BindGroupTextureDesc description(desc);
+
+  const auto handle = context_->bindGroupTexturesPool_.create(std::move(description));
+
+  Result::setResult(outResult,
+                    handle.empty() ? Result(Result::Code::RuntimeError, "Cannot create bind group")
+                                   : Result());
+
+  return {this, handle};
+}
+
+Holder<igl::BindGroupBufferHandle> Device::createBindGroup(const BindGroupBufferDesc& desc,
+                                                           Result* IGL_NULLABLE outResult) {
+  IGL_DEBUG_ASSERT(context_);
+  IGL_DEBUG_ASSERT(!desc.debugName.empty(), "Each bind group should have a debug name");
+
+  BindGroupBufferDesc description(desc);
+
+  const auto handle = context_->bindGroupBuffersPool_.create(std::move(description));
+
+  Result::setResult(outResult,
+                    handle.empty() ? Result(Result::Code::RuntimeError, "Cannot create bind group")
+                                   : Result());
+
+  return {this, handle};
+}
+
+void Device::destroy(igl::BindGroupTextureHandle handle) {
+  if (handle.empty()) {
+    return;
+  }
+
+  IGL_DEBUG_ASSERT(context_);
+
+  context_->bindGroupTexturesPool_.destroy(handle);
+}
+
+void Device::destroy(igl::BindGroupBufferHandle handle) {
+  if (handle.empty()) {
+    return;
+  }
+
+  IGL_DEBUG_ASSERT(context_);
+
+  context_->bindGroupBuffersPool_.destroy(handle);
+}
+
+void Device::destroy(igl::SamplerHandle handle) {
+  (void)handle;
+  // IGL/OpenGL is not using sampler handles
+}
+
+void Device::setCurrentThread() {
+  getContext().setCurrent();
+}
+
+} // namespace igl::opengl

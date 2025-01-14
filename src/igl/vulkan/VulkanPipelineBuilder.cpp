@@ -7,8 +7,7 @@
 
 #include "VulkanPipelineBuilder.h"
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 uint32_t VulkanPipelineBuilder::numPipelinesCreated_ = 0;
 uint32_t VulkanComputePipelineBuilder::numPipelinesCreated_ = 0;
@@ -32,8 +31,10 @@ VulkanPipelineBuilder& VulkanPipelineBuilder::depthWriteEnable(bool enable) {
   return *this;
 }
 
-VulkanPipelineBuilder& VulkanPipelineBuilder::depthCompareOp(VkCompareOp compareOp) {
-  depthStencilState_.depthTestEnable = compareOp != VK_COMPARE_OP_ALWAYS;
+VulkanPipelineBuilder& VulkanPipelineBuilder::depthCompareOp(VkCompareOp compareOp,
+                                                             bool writeDepthEnable) {
+  depthStencilState_.depthTestEnable =
+      static_cast<VkBool32>(compareOp != VK_COMPARE_OP_ALWAYS || writeDepthEnable);
   depthStencilState_.depthCompareOp = compareOp;
   return *this;
 }
@@ -158,7 +159,7 @@ VkResult VulkanPipelineBuilder::build(const VulkanFunctionTable& vf,
                                                 renderPass,
                                                 outPipeline);
 
-  if (!IGL_VERIFY(result == VK_SUCCESS)) {
+  if (!IGL_DEBUG_VERIFY(result == VK_SUCCESS)) {
     return result;
   }
 
@@ -184,7 +185,7 @@ VkResult VulkanComputePipelineBuilder::build(const VulkanFunctionTable& vf,
   const VkResult result = ivkCreateComputePipeline(
       &vf, device, pipelineCache, &shaderStage_, pipelineLayout, outPipeline);
 
-  if (!IGL_VERIFY(result == VK_SUCCESS)) {
+  if (!IGL_DEBUG_VERIFY(result == VK_SUCCESS)) {
     return result;
   }
 
@@ -195,5 +196,4 @@ VkResult VulkanComputePipelineBuilder::build(const VulkanFunctionTable& vf,
       &vf, device, VK_OBJECT_TYPE_PIPELINE, (uint64_t)*outPipeline, debugName);
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

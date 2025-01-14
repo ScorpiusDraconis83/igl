@@ -10,7 +10,6 @@
 #include <igl/IGLSafeC.h>
 #include <ktx.h>
 #include <numeric>
-#include <vector>
 
 namespace iglu::textureloader::ktx {
 namespace {
@@ -50,11 +49,13 @@ TextureLoader::TextureLoader(DataReader reader,
   Super(reader), texture_(std::move(texture)) {
   auto& desc = mutableDescriptor();
   desc.format = format;
-  desc.numMipLevels = range.numMipLevels;
   desc.numLayers = range.numLayers;
   desc.width = range.width;
   desc.height = range.height;
   desc.depth = range.depth;
+  desc.numMipLevels = shouldGenerateMipmaps()
+                          ? igl::TextureDesc::calcNumMipLevels(desc.width, desc.height, desc.depth)
+                          : range.numMipLevels;
 
   if (range.numFaces == 6u) {
     desc.type = igl::TextureType::Cube;
@@ -79,7 +80,7 @@ void TextureLoader::uploadInternal(igl::ITexture& texture,
                                    igl::Result* IGL_NULLABLE outResult) const noexcept {
   const auto& desc = descriptor();
 
-  size_t offset;
+  size_t offset = 0;
   for (uint32_t mipLevel = 0; mipLevel < desc.numMipLevels && mipLevel < texture_->numLevels;
        ++mipLevel) {
     auto error = ktxTexture_GetImageOffset(ktxTexture(texture_.get()), mipLevel, 0, 0, &offset);
@@ -100,7 +101,7 @@ void TextureLoader::loadToExternalMemoryInternal(uint8_t* IGL_NONNULL data,
                                                      outResult) const noexcept {
   const auto& desc = descriptor();
 
-  size_t offset;
+  size_t offset = 0;
   for (uint32_t mipLevel = 0; mipLevel < desc.numMipLevels && mipLevel < texture_->numLevels;
        ++mipLevel) {
     auto error = ktxTexture_GetImageOffset(ktxTexture(texture_.get()), 0, 0, mipLevel, &offset);
@@ -119,6 +120,7 @@ void TextureLoader::loadToExternalMemoryInternal(uint8_t* IGL_NONNULL data,
 
 std::unique_ptr<ITextureLoader> TextureLoaderFactory::tryCreateInternal(
     DataReader reader,
+    igl::TextureFormat /*preferredFormat*/,
     igl::Result* IGL_NULLABLE outResult) const noexcept {
   const auto range = textureRange(reader);
   auto result = range.validate();
@@ -149,9 +151,9 @@ std::unique_ptr<ITextureLoader> TextureLoaderFactory::tryCreateInternal(
 
   if (ktxTexture_NeedsTranscoding(rawTexture)) {
 #if IGL_PLATFORM_ANDROID || IGL_PLATFORM_IOS
-    ktx_transcode_fmt_e transcodeFormat = KTX_TTF_ASTC_4x4_RGBA;
+    const ktx_transcode_fmt_e transcodeFormat = KTX_TTF_ASTC_4x4_RGBA;
 #else
-    ktx_transcode_fmt_e transcodeFormat = KTX_TTF_BC7_RGBA;
+    const ktx_transcode_fmt_e transcodeFormat = KTX_TTF_BC7_RGBA;
 #endif
     error =
         ktxTexture2_TranscodeBasis(reinterpret_cast<ktxTexture2*>(rawTexture), transcodeFormat, 0);

@@ -9,10 +9,7 @@
 
 #include <igl/opengl/IContext.h>
 
-namespace igl {
-class ITexture;
-namespace opengl {
-namespace empty {
+namespace igl::opengl::empty {
 
 class Context final : public IContext {
  public:
@@ -40,6 +37,4 @@ class Context final : public IContext {
   void setEnabled(bool shouldEnable, GLenum cap) override;
 };
 
-} // namespace empty
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl::empty

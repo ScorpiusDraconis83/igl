@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #import "VulkanView.h"
 
 #import "AppDelegate.h"
@@ -21,8 +23,8 @@
 @interface VulkanView () {
   CVDisplayLinkRef displayLink_; // display link for managing rendering thread
   std::shared_ptr<igl::shell::Platform> shellPlatform_;
+  IBOutlet NSViewController* viewController;
 }
-@property (weak) ViewController* viewController;
 @end
 
 @implementation VulkanView
@@ -38,8 +40,14 @@
   NSTabViewItem* item = tabController.tabViewItems[tabController.selectedTabViewItemIndex];
 
   ViewController* controller = (ViewController*)item.viewController;
-  self.viewController = controller;
+  self->viewController = controller;
   shellPlatform_ = platform;
+  self.postsFrameChangedNotifications = YES;
+
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(frameDidChange:)
+                                               name:NSViewFrameDidChangeNotification
+                                             object:self];
 
   [controller initModule];
 
@@ -55,9 +63,9 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef /*displayLink*/,
 
                                     void* userdata) {
   auto view = (__bridge VulkanView*)userdata;
-  [view.viewController performSelectorOnMainThread:@selector(render)
-                                        withObject:nil
-                                     waitUntilDone:NO];
+  [view->viewController performSelectorOnMainThread:@selector(render)
+                                         withObject:nil
+                                      waitUntilDone:NO];
   return kCVReturnSuccess;
 }
 
@@ -83,6 +91,10 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef /*displayLink*/,
 }
 
 - (void)viewDidChangeBackingProperties {
+  [self updateSwapchain];
+}
+
+- (void)updateSwapchain {
   const NSRect contentRect = [self frame];
   const NSRect imageRect = [self convertRectToBacking:contentRect];
   const float xscale = imageRect.size.width / contentRect.size.width;
@@ -101,6 +113,10 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef /*displayLink*/,
 #endif // IGL_BACKEND_VULKAN
 }
 
+- (void)frameDidChange:(NSNotification*)notification {
+  [self updateSwapchain];
+}
+
 /** Returns a Metal-compatible layer. */
 + (Class)layerClass {
   return [CAMetalLayer class];
@@ -114,6 +130,22 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef /*displayLink*/,
   CGFloat factor = [screen backingScaleFactor];
   layer.contentsScale = factor;
   return layer;
+}
+
+- (BOOL)acceptsFirstResponder {
+  return YES;
+}
+
+- (void)keyUp:(NSEvent*)event {
+  if (viewController) {
+    [viewController keyUp:event];
+  }
+}
+
+- (void)keyDown:(NSEvent*)event {
+  if (viewController) {
+    [viewController keyDown:event];
+  }
 }
 
 @end

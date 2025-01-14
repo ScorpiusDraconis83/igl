@@ -39,7 +39,7 @@ StbImageData::StbImageData(uint8_t* data, uint32_t length) :
   data_(std::unique_ptr<uint8_t, StbImageDeleter>(data)), length_(length) {}
 
 [[nodiscard]] const uint8_t* IGL_NONNULL StbImageData::data() const noexcept {
-  IGL_ASSERT(data_ != nullptr);
+  IGL_DEBUG_ASSERT(data_ != nullptr);
   return data_.get();
 }
 
@@ -51,7 +51,11 @@ class TextureLoader : public ITextureLoader {
   using Super = ITextureLoader;
 
  public:
-  explicit TextureLoader(DataReader reader, int width, int height, bool isFloatFormat) noexcept;
+  explicit TextureLoader(DataReader reader,
+                         int width,
+                         int height,
+                         bool isFloatFormat,
+                         igl::TextureFormat preferredFormat) noexcept;
 
   [[nodiscard]] bool canUploadSourceData() const noexcept final;
   [[nodiscard]] bool shouldGenerateMipmaps() const noexcept final;
@@ -62,11 +66,17 @@ class TextureLoader : public ITextureLoader {
   bool isFloatFormat_;
 };
 
-TextureLoader::TextureLoader(DataReader reader, int width, int height, bool isFloatFormat) noexcept
-  :
+TextureLoader::TextureLoader(DataReader reader,
+                             int width,
+                             int height,
+                             bool isFloatFormat,
+                             igl::TextureFormat preferredFormat) noexcept :
   Super(reader), isFloatFormat_(isFloatFormat) {
   auto& desc = mutableDescriptor();
-  desc.format = isFloatFormat ? igl::TextureFormat::RGBA_F32 : igl::TextureFormat::RGBA_UNorm8;
+  desc.format =
+      preferredFormat != igl::TextureFormat::Invalid
+          ? preferredFormat
+          : (isFloatFormat ? igl::TextureFormat::RGBA_F32 : igl::TextureFormat::RGBA_UNorm8);
   desc.numLayers = 1;
   desc.width = static_cast<size_t>(width);
   desc.height = static_cast<size_t>(height);
@@ -89,10 +99,10 @@ bool TextureLoader::shouldGenerateMipmaps() const noexcept {
 std::unique_ptr<IData> TextureLoader::loadInternal(
     igl::Result* IGL_NULLABLE outResult) const noexcept {
   const auto r = reader();
-  int length = r.length() > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max()
-                                                            : static_cast<int>(r.length());
+  const int length = r.length() > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max()
+                                                                  : static_cast<int>(r.length());
 
-  int x, y, comp;
+  int x = 0, y = 0, comp = 0;
   void* data = nullptr;
   // Pass 4 for desired_channels to force RGBA instead of RGB.
   if (isFloatFormat_) {
@@ -124,12 +134,13 @@ bool TextureLoaderFactory::canCreateInternal(DataReader headerReader,
 
 std::unique_ptr<ITextureLoader> TextureLoaderFactory::tryCreateInternal(
     DataReader reader,
+    igl::TextureFormat preferredFormat,
     igl::Result* IGL_NULLABLE outResult) const noexcept {
-  int length = reader.length() > std::numeric_limits<int>::max()
-                   ? std::numeric_limits<int>::max()
-                   : static_cast<int>(reader.length());
+  const int length = reader.length() > std::numeric_limits<int>::max()
+                         ? std::numeric_limits<int>::max()
+                         : static_cast<int>(reader.length());
 
-  int x, y, comp;
+  int x = 0, y = 0, comp = 0;
   if (stbi_info_from_memory(reader.data(), length, &x, &y, &comp) == 0) {
     igl::Result::setResult(
         outResult, igl::Result::Code::InvalidOperation, "Could not get HDR metadata.");
@@ -146,7 +157,7 @@ std::unique_ptr<ITextureLoader> TextureLoaderFactory::tryCreateInternal(
     return nullptr;
   }
 
-  return std::make_unique<TextureLoader>(reader, x, y, isFloatFormat_);
+  return std::make_unique<TextureLoader>(reader, x, y, isFloatFormat_, preferredFormat);
 }
 
 } // namespace iglu::textureloader::stb::image

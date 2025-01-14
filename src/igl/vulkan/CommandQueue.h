@@ -11,8 +11,7 @@
 #include <igl/vulkan/Common.h>
 #include <igl/vulkan/Device.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 class CommandBuffer;
 
@@ -39,15 +38,10 @@ class CommandQueue final : public ICommandQueue {
   /// before the command buffer is executed. It will also execute the shader debugging render pass
   /// by calling `enhancedShaderDebuggingPass()`. If the enhanced shader debugging is enabled,
   /// presenting the image is disabled.
-  /// @param commandBuffer The command buffer to be submitted.
+  /// @param cmdBuffer The command buffer to be submitted.
   /// @param endOfFrame Not used
-  SubmitHandle submit(const ICommandBuffer& commandBuffer, bool endOfFrame = false) override;
+  SubmitHandle submit(const ICommandBuffer& cmdBuffer, bool endOfFrame = false) override;
 
-  const CommandQueueDesc& getCommandQueueDesc() const {
-    return desc_;
-  }
-
- private:
   /** @brief Ends the current command buffer and resets the internal flag tracking an active command
    * buffer. Determines if an image should be presented by (1) checking if this instance belongs to
    * a graphics queue, (2) the context has a swapchain object, (3) the command buffer is from a
@@ -57,23 +51,16 @@ class CommandQueue final : public ICommandQueue {
    * if an image should be presented. Finally, it signals the context to process deferred tasks (for
    * more details about deferred tasks, please refer to the igl::vulkan::VulkanContext class).
    */
-  SubmitHandle endCommandBuffer(const igl::vulkan::VulkanContext& ctx,
+  SubmitHandle endCommandBuffer(igl::vulkan::VulkanContext& ctx,
                                 igl::vulkan::CommandBuffer* cmdBuffer,
                                 bool present);
 
-  /// @brief Executes the shader debugging render pass. Also presents the image if the command
-  /// buffer being submitted was from a swapchain.
-  void enhancedShaderDebuggingPass(const igl::vulkan::VulkanContext& ctx,
-                                   const igl::vulkan::CommandBuffer* cmdBuffer);
-
  private:
   igl::vulkan::Device& device_;
-  CommandQueueDesc desc_;
 
   /// @brief Flag indicating whether or not there is an active command buffer. Currently only one
   /// command buffer can be active at a time.
   bool isInsideFrame_ = false;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

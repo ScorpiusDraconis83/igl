@@ -12,8 +12,7 @@
 #include <igl/opengl/IContext.h>
 #include <igl/opengl/RenderCommandEncoder.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 CommandBuffer::CommandBuffer(std::shared_ptr<IContext> context) : context_(std::move(context)) {}
 
@@ -21,7 +20,7 @@ CommandBuffer::~CommandBuffer() = default;
 
 std::unique_ptr<IRenderCommandEncoder> CommandBuffer::createRenderCommandEncoder(
     const RenderPassDesc& renderPass,
-    std::shared_ptr<IFramebuffer> framebuffer,
+    const std::shared_ptr<IFramebuffer>& framebuffer,
     const Dependencies& dependencies,
     Result* outResult) {
   return RenderCommandEncoder::create(
@@ -32,7 +31,7 @@ std::unique_ptr<IComputeCommandEncoder> CommandBuffer::createComputeCommandEncod
   return std::make_unique<ComputeCommandEncoder>(shared_from_this()->getContext());
 }
 
-void CommandBuffer::present(std::shared_ptr<ITexture> surface) const {
+void CommandBuffer::present(const std::shared_ptr<ITexture>& surface) const {
   context_->present(surface);
 }
 
@@ -45,10 +44,9 @@ void CommandBuffer::waitUntilCompleted() {
 }
 
 void CommandBuffer::pushDebugGroupLabel(const char* label, const igl::Color& /*color*/) const {
-  IGL_ASSERT(label != nullptr && *label);
+  IGL_DEBUG_ASSERT(label != nullptr && *label);
   if (getContext().deviceFeatures().hasInternalFeature(InternalFeatures::DebugMessage)) {
-    std::string_view labelSV(label);
-    getContext().pushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, labelSV.length(), labelSV.data());
+    getContext().pushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, label);
   } else {
     IGL_LOG_ERROR_ONCE("CommandBuffer::pushDebugGroupLabel not supported in this context!\n");
   }
@@ -66,5 +64,4 @@ IContext& CommandBuffer::getContext() const {
   return *context_;
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

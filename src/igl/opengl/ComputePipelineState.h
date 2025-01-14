@@ -15,12 +15,9 @@
 #include <igl/opengl/Shader.h>
 #include <unordered_map>
 
-namespace igl {
-namespace opengl {
-class VertexInputState;
+namespace igl::opengl {
 class Texture;
 class Buffer;
-class Device;
 
 class ComputePipelineState final : public WithContext, public IComputePipelineState {
   friend class Device;
@@ -32,12 +29,12 @@ class ComputePipelineState final : public WithContext, public IComputePipelineSt
   Result create(const ComputePipelineDesc& desc);
   void bind();
   void unbind();
-  Result bindTextureUnit(const size_t unit, Texture* texture);
-  Result bindBuffer(const size_t unit, Buffer* buffer);
+  Result bindTextureUnit(size_t unit, Texture* texture);
+  Result bindBuffer(size_t unit, Buffer* buffer);
 
   std::shared_ptr<IComputePipelineReflection> computePipelineReflection() override;
 
-  int getIndexByName(const NameHandle& name) const override;
+  [[nodiscard]] int getIndexByName(const NameHandle& name) const override;
 
   bool getIsUsingShaderStorageBuffers() {
     return usingShaderStorageBuffers_;
@@ -46,8 +43,8 @@ class ComputePipelineState final : public WithContext, public IComputePipelineSt
  private:
   using ComputePipelineReflection = RenderPipelineReflection;
 
-  std::array<GLint, IGL_VERTEX_BUFFER_MAX> bufferUnitMap_;
-  std::array<GLint, IGL_TEXTURE_SAMPLERS_MAX> imageUnitMap_;
+  std::array<GLint, IGL_BUFFER_BINDINGS_MAX> bufferUnitMap_{};
+  std::array<GLint, IGL_TEXTURE_SAMPLERS_MAX> imageUnitMap_{};
 
   std::shared_ptr<ShaderStages> shaderStages_;
   std::shared_ptr<ComputePipelineReflection> reflection_;
@@ -55,5 +52,4 @@ class ComputePipelineState final : public WithContext, public IComputePipelineSt
   bool usingShaderStorageBuffers_ = false;
 };
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

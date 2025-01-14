@@ -13,8 +13,7 @@
 #include <igl/opengl/DepthStencilState.h>
 #include <igl/opengl/Texture.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 namespace {
 bool isPowerOfTwo(size_t number) {
   return (number & (number - 1)) == 0;
@@ -27,21 +26,23 @@ SamplerState::SamplerState(IContext& context, const SamplerStateDesc& desc) :
   magFilter_(convertMagFilter(desc.magFilter)),
   mipLodMin_(desc.mipLodMin),
   mipLodMax_(desc.mipLodMax),
+  maxAnisotropy_(desc.maxAnisotropic),
   addressU_(convertAddressMode(desc.addressModeU)),
   addressV_(convertAddressMode(desc.addressModeV)),
   addressW_(convertAddressMode(desc.addressModeW)),
   depthCompareFunction_(DepthStencilState::convertCompareFunction(desc.depthCompareFunction)),
-  depthCompareEnabled_(desc.depthCompareEnabled) {
-  std::hash<SamplerStateDesc> h;
+  depthCompareEnabled_(desc.depthCompareEnabled),
+  isYUV_(desc.yuvFormat != igl::TextureFormat::Invalid) {
+  const std::hash<SamplerStateDesc> h;
   hash_ = h(desc);
 }
 
 void SamplerState::bind(ITexture* t) {
-  if (IGL_UNEXPECTED(t == nullptr)) {
+  if (IGL_DEBUG_VERIFY_NOT(t == nullptr)) {
     return;
   }
 
-  auto texture = static_cast<igl::opengl::Texture*>(t);
+  auto* texture = static_cast<igl::opengl::Texture*>(t);
   if (texture->getSamplerHash() == hash_) {
     return;
   }
@@ -93,6 +94,15 @@ void SamplerState::bind(ITexture* t) {
     getContext().texParameteri(target, GL_TEXTURE_MIN_LOD, mipLodMin_);
     getContext().texParameteri(target, GL_TEXTURE_MAX_LOD, mipLodMax_);
   }
+  if (deviceFeatures.hasFeature(DeviceFeatures::TextureFilterAnisotropic)) {
+    // @fb-only
+    // Disable the anisotropic filter for now, it's causing a crash on some devices
+#if 0
+    getContext().texParameteri(target, GL_TEXTURE_MAX_ANISOTROPY, maxAnisotropy_);
+#else
+    (void)maxAnisotropy_;
+#endif
+  }
 
   if (isDepthOrDepthStencil &&
       deviceFeatures.hasInternalFeature(InternalFeatures::TextureCompare)) {
@@ -123,7 +133,7 @@ void SamplerState::bind(ITexture* t) {
 
 // utility functions for converting from IGL sampler state enums to GL enums
 GLint SamplerState::convertMinMipFilter(SamplerMinMagFilter minFilter, SamplerMipFilter mipFilter) {
-  GLint glMinFilter;
+  GLint glMinFilter = 0;
 
   switch (mipFilter) {
   case SamplerMipFilter::Disabled:
@@ -169,7 +179,9 @@ SamplerMinMagFilter SamplerState::convertGLMinFilter(GLint glMinFilter) {
     break;
 
   default:
-    IGL_ASSERT_NOT_REACHED();
+#ifndef GTEST
+    IGL_DEBUG_ASSERT_NOT_REACHED();
+#endif
     minFilter = SamplerMinMagFilter::Nearest;
   }
 
@@ -196,7 +208,7 @@ SamplerMipFilter SamplerState::convertGLMipFilter(GLint glMinFilter) {
     break;
 
   default:
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
     mipFilter = SamplerMipFilter::Disabled;
   }
 
@@ -204,7 +216,7 @@ SamplerMipFilter SamplerState::convertGLMipFilter(GLint glMinFilter) {
 }
 
 GLint SamplerState::convertAddressMode(SamplerAddressMode addressMode) {
-  GLint glAddressMode;
+  GLint glAddressMode = 0;
 
   switch (addressMode) {
   case SamplerAddressMode::Repeat:
@@ -247,5 +259,8 @@ SamplerAddressMode SamplerState::convertGLAddressMode(GLint glAddressMode) {
   return addressMode;
 }
 
-} // namespace opengl
-} // namespace igl
+bool SamplerState::isYUV() const noexcept {
+  return isYUV_;
+}
+
+} // namespace igl::opengl

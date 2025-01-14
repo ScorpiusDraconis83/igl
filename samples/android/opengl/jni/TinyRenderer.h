@@ -5,13 +5,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <igl/IGL.h>
 #include <memory>
 
-namespace igl_samples {
-namespace android {
+namespace igl_samples::android {
 
 class TinyRenderer final {
  public:
@@ -31,5 +32,4 @@ class TinyRenderer final {
   igl::RenderPassDesc renderPassDesc_;
 };
 
-} // namespace android
-} // namespace igl_samples
+} // namespace igl_samples::android

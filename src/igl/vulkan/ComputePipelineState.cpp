@@ -12,25 +12,36 @@
 #include <igl/vulkan/VulkanDescriptorSetLayout.h>
 #include <igl/vulkan/VulkanDevice.h>
 #include <igl/vulkan/VulkanPipelineBuilder.h>
-#include <igl/vulkan/VulkanPipelineLayout.h>
 #include <utility>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 ComputePipelineState::ComputePipelineState(const igl::vulkan::Device& device,
                                            ComputePipelineDesc desc) :
-  PipelineState(device.getVulkanContext(), desc.shaderStages.get(), desc.debugName.c_str()),
+  PipelineState(device.getVulkanContext(),
+                desc.shaderStages.get(),
+                nullptr,
+                0,
+                desc.debugName.c_str()),
   device_(device),
   desc_(std::move(desc)) {}
 
 ComputePipelineState ::~ComputePipelineState() {
+  IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_DESTROY);
+
   if (pipeline_ != VK_NULL_HANDLE) {
     const auto& ctx = device_.getVulkanContext();
     ctx.deferredTask(std::packaged_task<void()>(
         [vf = &ctx.vf_,
          device = device_.getVulkanContext().device_->getVkDevice(),
          pipeline = pipeline_]() { vf->vkDestroyPipeline(device, pipeline, nullptr); }));
+  }
+  if (pipelineLayout_ != VK_NULL_HANDLE) {
+    const auto& ctx = device_.getVulkanContext();
+    ctx.deferredTask(std::packaged_task<void()>(
+        [vf = &ctx.vf_, device = ctx.getVkDevice(), layout = pipelineLayout_]() {
+          vf->vkDestroyPipelineLayout(device, layout, nullptr);
+        }));
   }
 }
 
@@ -44,12 +55,14 @@ VkPipeline ComputePipelineState::getVkPipeline() const {
       // there's a new descriptor set layout - drop the previous Vulkan pipeline
       VkDevice device = ctx.device_->getVkDevice();
       if (pipeline_ != VK_NULL_HANDLE) {
-        ctx.deferredTask(
-            std::packaged_task<void()>([vf = &ctx.vf_, device, pipeline = pipeline_]() {
+        ctx.deferredTask(std::packaged_task<void()>(
+            [vf = &ctx.vf_, device, pipeline = pipeline_, layout = pipelineLayout_]() {
               vf->vkDestroyPipeline(device, pipeline, nullptr);
+              vf->vkDestroyPipelineLayout(device, layout, nullptr);
             }));
       }
       pipeline_ = VK_NULL_HANDLE;
+      pipelineLayout_ = VK_NULL_HANDLE;
       lastBindlessVkDescriptorSetLayout_ = ctx.getBindlessVkDescriptorSetLayout();
     }
   }
@@ -58,23 +71,30 @@ VkPipeline ComputePipelineState::getVkPipeline() const {
     return pipeline_;
   }
 
+  IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_CREATE);
+
   // @fb-only
   const VkDescriptorSetLayout DSLs[] = {
       dslCombinedImageSamplers_->getVkDescriptorSetLayout(),
-      dslUniformBuffers_->getVkDescriptorSetLayout(),
-      dslStorageBuffers_->getVkDescriptorSetLayout(),
+      dslBuffers_->getVkDescriptorSetLayout(),
       ctx.getBindlessVkDescriptorSetLayout(),
   };
 
-  pipelineLayout_ = std::make_unique<VulkanPipelineLayout>(
-      ctx,
-      ctx.getVkDevice(),
-      DSLs,
-      static_cast<uint32_t>(ctx.config_.enableDescriptorIndexing
-                                ? IGL_ARRAY_NUM_ELEMENTS(DSLs)
-                                : IGL_ARRAY_NUM_ELEMENTS(DSLs) - 1u),
-      info_.hasPushConstants ? &pushConstantRange_ : nullptr,
-      IGL_FORMAT("Pipeline Layout: {}", desc_.debugName).c_str());
+  const VkPipelineLayoutCreateInfo ci =
+      ivkGetPipelineLayoutCreateInfo(static_cast<uint32_t>(ctx.config_.enableDescriptorIndexing
+                                                               ? IGL_ARRAY_NUM_ELEMENTS(DSLs)
+                                                               : IGL_ARRAY_NUM_ELEMENTS(DSLs) - 1u),
+                                     DSLs,
+                                     info_.hasPushConstants ? &pushConstantRange_ : nullptr);
+
+  VkDevice device = ctx.device_->getVkDevice();
+  VK_ASSERT(ctx.vf_.vkCreatePipelineLayout(device, &ci, nullptr, &pipelineLayout_));
+  VK_ASSERT(
+      ivkSetDebugObjectName(&ctx.vf_,
+                            device,
+                            VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+                            (uint64_t)pipelineLayout_,
+                            IGL_FORMAT("Pipeline Layout: {}", desc_.debugName.c_str()).c_str()));
 
   const auto& shaderModule = desc_.shaderStages->getComputeModule();
 
@@ -86,12 +106,11 @@ VkPipeline ComputePipelineState::getVkPipeline() const {
       .build(ctx.vf_,
              ctx.device_->getVkDevice(),
              ctx.pipelineCache_,
-             pipelineLayout_->getVkPipelineLayout(),
+             pipelineLayout_,
              &pipeline_,
              desc_.debugName.c_str());
 
   return pipeline_;
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

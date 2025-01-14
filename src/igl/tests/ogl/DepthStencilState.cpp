@@ -14,8 +14,7 @@
 #include <igl/opengl/DepthStencilState.h>
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 // Picking this just to match the texture we will use. If you use a different
 // size texture, then you will have to either create a new offscreenTexture_
@@ -47,11 +46,11 @@ class DepthStencilStateTest : public ::testing::Test {
     Result ret;
 
     // Create an offscreen texture to render to
-    TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                             OFFSCREEN_TEX_WIDTH,
-                                             OFFSCREEN_TEX_HEIGHT,
-                                             TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
+    const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                   OFFSCREEN_TEX_WIDTH,
+                                                   OFFSCREEN_TEX_HEIGHT,
+                                                   TextureDesc::TextureUsageBits::Sampled |
+                                                       TextureDesc::TextureUsageBits::Attachment);
 
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
@@ -97,7 +96,7 @@ class DepthStencilStateTest : public ::testing::Test {
     inputDesc.numAttributes = inputDesc.numInputBindings = 2;
 
     vertexInputState_ = iglDev_->createVertexInputState(inputDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vertexInputState_ != nullptr);
 
     // Initialize index buffer
@@ -108,7 +107,7 @@ class DepthStencilStateTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_IND);
 
     ib_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(ib_ != nullptr);
 
     // Initialize Render Pipeline Descriptor, but leave the creation
@@ -152,7 +151,7 @@ TEST_F(DepthStencilStateTest, Passthrough) {
   Result ret;
   std::shared_ptr<IDepthStencilState> idss;
 
-  DepthStencilStateDesc dsDesc;
+  const DepthStencilStateDesc dsDesc;
   idss = iglDev_->createDepthStencilState(dsDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(idss != nullptr);
@@ -165,7 +164,7 @@ TEST_F(DepthStencilStateTest, Passthrough) {
   // No asserts, just test the passthroughs are successful
   cmdEncoder->bindDepthStencilState(idss);
   auto dss = std::static_pointer_cast<igl::opengl::DepthStencilState>(idss);
-  dss->bind(); // Test bind passthrough
+  dss->bind(0, 0); // Test bind passthrough
   dss->unbind();
 }
 
@@ -180,7 +179,7 @@ TEST_F(DepthStencilStateTest, CompareFunctionToOGL) {
     GLenum ogl = GL_NEVER;
   };
 
-  std::vector<CompareFuncConversion> conversions{
+  const std::vector<CompareFuncConversion> conversions{
       CompareFuncConversion{igl::CompareFunction::Never, GL_NEVER},
       CompareFuncConversion{igl::CompareFunction::Less, GL_LESS},
       CompareFuncConversion{igl::CompareFunction::Equal, GL_EQUAL},
@@ -192,7 +191,7 @@ TEST_F(DepthStencilStateTest, CompareFunctionToOGL) {
   };
 
   for (auto data : conversions) {
-    GLenum ogl = igl::opengl::DepthStencilState::convertCompareFunction(data.igl);
+    const GLenum ogl = igl::opengl::DepthStencilState::convertCompareFunction(data.igl);
     ASSERT_EQ(ogl, data.ogl);
   }
 }
@@ -208,7 +207,7 @@ TEST_F(DepthStencilStateTest, StencilOperationToOGL) {
     GLenum ogl = GL_KEEP;
   };
 
-  std::vector<StencilOpConversion> conversions{
+  const std::vector<StencilOpConversion> conversions{
       StencilOpConversion{igl::StencilOperation::Keep, GL_KEEP},
       StencilOpConversion{igl::StencilOperation::Zero, GL_ZERO},
       StencilOpConversion{igl::StencilOperation::Replace, GL_REPLACE},
@@ -220,7 +219,7 @@ TEST_F(DepthStencilStateTest, StencilOperationToOGL) {
   };
 
   for (auto data : conversions) {
-    GLenum ogl = igl::opengl::DepthStencilState::convertStencilOperation(data.igl);
+    const GLenum ogl = igl::opengl::DepthStencilState::convertStencilOperation(data.igl);
     ASSERT_EQ(ogl, data.ogl);
   }
 }
@@ -242,7 +241,7 @@ TEST_F(DepthStencilStateTest, SetStencilReferenceValueAndCheck) {
   std::shared_ptr<IRenderPipelineState> pipelineState;
 
   pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(pipelineState != nullptr);
 
   // Test initialization of DepthStencilState in CommandEncoder
@@ -258,7 +257,8 @@ TEST_F(DepthStencilStateTest, SetStencilReferenceValueAndCheck) {
   // Dummy draw just to force binding of the states
   cmdEncoder->bindRenderPipelineState(pipelineState);
   cmdEncoder->bindDepthStencilState(idss);
-  cmdEncoder->drawIndexed(PrimitiveType::Triangle, 0, IndexFormat::UInt16, *ib_, 0);
+  cmdEncoder->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmdEncoder->drawIndexed(0);
   cmdEncoder->endEncoding();
   cmdQueue_->submit(*cmdBuf_);
 
@@ -337,7 +337,7 @@ TEST_F(DepthStencilStateTest, SetStencilReferenceValueAndCheck) {
 
   ctx->enable(GL_DEPTH_TEST);
   ctx->depthFunc(opengl::DepthStencilState::convertCompareFunction(newDsDesc.compareFunction));
-  GLuint mask{0xff};
+  const GLuint mask{0xff};
   ctx->stencilFuncSeparate(
       GL_FRONT,
       opengl::DepthStencilState::convertCompareFunction(newDsDesc.compareFunction),
@@ -373,10 +373,10 @@ TEST_F(DepthStencilStateTest, SetStencilReferenceValueAndCheck) {
   cmdEncoder->bindRenderPipelineState(pipelineState);
   cmdEncoder->bindDepthStencilState(idss);
 
-  cmdEncoder->setStencilReferenceValue(1);
-  cmdEncoder->setStencilReferenceValues(2, 3);
+  cmdEncoder->setStencilReferenceValue(2);
 
-  cmdEncoder->drawIndexed(PrimitiveType::Triangle, 0, IndexFormat::UInt16, *ib_, 0);
+  cmdEncoder->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmdEncoder->drawIndexed(0);
   cmdEncoder->endEncoding();
   cmdQueue_->submit(*cmdBuf_);
 
@@ -406,7 +406,7 @@ TEST_F(DepthStencilStateTest, SetStencilReferenceValueAndCheck) {
   ASSERT_TRUE(GL_KEEP == origStencilPassDepthFail);
   ASSERT_TRUE(GL_KEEP == origStencilPassDepthPass);
 
-#if defined(IGL_ANGLE) && IGL_ANGLE
+#if (defined(IGL_PLATFORM_LINUX) && IGL_PLATFORM_LINUX) || defined(IGL_ANGLE) && IGL_ANGLE
   // For unknown reasons ANGLE clamps masks to int type.
   ASSERT_TRUE(0x7fffffff == origStencilBackWriteMask);
   ASSERT_TRUE(0x7fffffff == origStencilWriteMask);
@@ -460,5 +460,4 @@ TEST_F(DepthStencilStateTest, SetStencilReferenceValueAndCheck) {
   ASSERT_TRUE(newDsDesc.backFaceStencil != newDsDesc.frontFaceStencil);
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

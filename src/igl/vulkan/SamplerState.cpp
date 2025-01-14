@@ -8,9 +8,6 @@
 #include <igl/vulkan/Device.h>
 #include <igl/vulkan/SamplerState.h>
 #include <igl/vulkan/VulkanContext.h>
-#include <igl/vulkan/VulkanDevice.h>
-#include <igl/vulkan/VulkanHelpers.h>
-#include <igl/vulkan/VulkanSampler.h>
 
 #define IGL_VULKAN_DEBUG_SAMPLER_STATE 1
 
@@ -22,7 +19,7 @@ VkFilter samplerMinMagFilterToVkFilter(igl::SamplerMinMagFilter filter) {
   case igl::SamplerMinMagFilter::Linear:
     return VK_FILTER_LINEAR;
   }
-  IGL_ASSERT_MSG(false, "SamplerMinMagFilter value not handled: %d", (int)filter);
+  IGL_DEBUG_ABORT("SamplerMinMagFilter value not handled: %d", (int)filter);
   return VK_FILTER_LINEAR;
 }
 
@@ -34,11 +31,11 @@ VkSamplerMipmapMode samplerMipFilterToVkSamplerMipmapMode(igl::SamplerMipFilter 
   case igl::SamplerMipFilter::Linear:
     return VK_SAMPLER_MIPMAP_MODE_LINEAR;
   }
-  IGL_ASSERT_MSG(false, "SamplerMipFilter value not handled: %d", (int)filter);
+  IGL_DEBUG_ABORT("SamplerMipFilter value not handled: %d", (int)filter);
   return VK_SAMPLER_MIPMAP_MODE_NEAREST;
 }
 
-static VkSamplerAddressMode samplerAddressModeToVkSamplerAddressMode(igl::SamplerAddressMode mode) {
+VkSamplerAddressMode samplerAddressModeToVkSamplerAddressMode(igl::SamplerAddressMode mode) {
   switch (mode) {
   case igl::SamplerAddressMode::Repeat:
     return VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -47,35 +44,46 @@ static VkSamplerAddressMode samplerAddressModeToVkSamplerAddressMode(igl::Sample
   case igl::SamplerAddressMode::MirrorRepeat:
     return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
   }
-  IGL_ASSERT_MSG(false, "SamplerAddressMode value not handled: %d", (int)mode);
+  IGL_DEBUG_ABORT("SamplerAddressMode value not handled: %d", (int)mode);
   return VK_SAMPLER_ADDRESS_MODE_REPEAT;
 }
 
 VkSamplerCreateInfo samplerStateDescToVkSamplerCreateInfo(const igl::SamplerStateDesc& desc,
                                                           const VkPhysicalDeviceLimits& limits) {
-  IGL_ASSERT_MSG(desc.mipLodMax >= desc.mipLodMin,
-                 "mipLodMax (%d) must be greater than or equal to mipLodMin (%d)",
-                 (int)desc.mipLodMax,
-                 (int)desc.mipLodMin);
+  IGL_DEBUG_ASSERT(desc.mipLodMax >= desc.mipLodMin,
+                   "mipLodMax (%d) must be greater than or equal to mipLodMin (%d)",
+                   (int)desc.mipLodMax,
+                   (int)desc.mipLodMin);
 
-  VkSamplerCreateInfo ci =
-      ivkGetSamplerCreateInfo(samplerMinMagFilterToVkFilter(desc.minFilter),
-                              samplerMinMagFilterToVkFilter(desc.magFilter),
-                              samplerMipFilterToVkSamplerMipmapMode(desc.mipFilter),
-                              samplerAddressModeToVkSamplerAddressMode(desc.addressModeU),
-                              samplerAddressModeToVkSamplerAddressMode(desc.addressModeV),
-                              samplerAddressModeToVkSamplerAddressMode(desc.addressModeW),
-                              desc.mipLodMin,
-                              desc.mipLodMax);
-
-  if (desc.mipFilter == igl::SamplerMipFilter::Disabled) {
-    ci.maxLod = 0.0f;
-  }
+  VkSamplerCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .magFilter = samplerMinMagFilterToVkFilter(desc.magFilter),
+      .minFilter = samplerMinMagFilterToVkFilter(desc.minFilter),
+      .mipmapMode = samplerMipFilterToVkSamplerMipmapMode(desc.mipFilter),
+      .addressModeU = samplerAddressModeToVkSamplerAddressMode(desc.addressModeU),
+      .addressModeV = samplerAddressModeToVkSamplerAddressMode(desc.addressModeV),
+      .addressModeW = samplerAddressModeToVkSamplerAddressMode(desc.addressModeW),
+      .mipLodBias = 0.0f,
+      .anisotropyEnable = VK_FALSE,
+      .maxAnisotropy = 0.0f,
+      .compareEnable = desc.depthCompareEnabled ? VK_TRUE : VK_FALSE,
+      .compareOp = desc.depthCompareEnabled
+                       ? igl::vulkan::compareFunctionToVkCompareOp(desc.depthCompareFunction)
+                       : VK_COMPARE_OP_ALWAYS,
+      .minLod = static_cast<float>(desc.mipLodMin),
+      .maxLod = desc.mipFilter == igl::SamplerMipFilter::Disabled
+                    ? 0.0f
+                    : static_cast<float>(desc.mipLodMax),
+      .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+      .unnormalizedCoordinates = VK_FALSE,
+  };
 
   if (desc.maxAnisotropic > 1) {
     const bool isAnisotropicFilteringSupported = limits.maxSamplerAnisotropy > 1;
-    IGL_ASSERT_MSG(isAnisotropicFilteringSupported,
-                   "Anisotropic filtering is not supported by the device.");
+    IGL_DEBUG_ASSERT(isAnisotropicFilteringSupported,
+                     "Anisotropic filtering is not supported by the device.");
     ci.anisotropyEnable = isAnisotropicFilteringSupported ? VK_TRUE : VK_FALSE;
 
 #ifdef IGL_VULKAN_DEBUG_SAMPLER_STATE
@@ -89,20 +97,14 @@ VkSamplerCreateInfo samplerStateDescToVkSamplerCreateInfo(const igl::SamplerStat
     ci.maxAnisotropy = std::min((float)limits.maxSamplerAnisotropy, (float)desc.maxAnisotropic);
   }
 
-  if (desc.depthCompareEnabled) {
-    ci.compareEnable = VK_TRUE;
-    ci.compareOp = igl::vulkan::compareFunctionToVkCompareOp(desc.depthCompareFunction);
-  }
-
   return ci;
 }
+
 } // namespace
 
-namespace igl {
+namespace igl::vulkan {
 
-namespace vulkan {
-
-SamplerState::SamplerState(const igl::vulkan::Device& device) : device_(device) {}
+SamplerState::SamplerState(igl::vulkan::Device& device) : device_(device) {}
 
 Result SamplerState::create(const SamplerStateDesc& desc) {
   IGL_PROFILER_FUNCTION();
@@ -112,23 +114,29 @@ Result SamplerState::create(const SamplerStateDesc& desc) {
   const VulkanContext& ctx = device_.getVulkanContext();
 
   Result result;
-  sampler_ = ctx.createSampler(
-      samplerStateDescToVkSamplerCreateInfo(desc, ctx.getVkPhysicalDeviceProperties().limits),
-      &result,
-      desc_.debugName.c_str());
+  sampler_ = igl::Holder<igl::SamplerHandle>(
+      &device_,
+      ctx.createSampler(
+          samplerStateDescToVkSamplerCreateInfo(desc, ctx.getVkPhysicalDeviceProperties().limits),
+          textureFormatToVkFormat(desc.yuvFormat),
+          &result,
+          desc_.debugName.c_str()));
 
-  if (!IGL_VERIFY(result.isOk())) {
+  if (!IGL_DEBUG_VERIFY(result.isOk())) {
     return result;
   }
 
-  return sampler_ ? Result()
-                  : Result(Result::Code::InvalidOperation, "Cannot create VulkanSampler");
+  return sampler_.valid() ? Result()
+                          : Result(Result::Code::InvalidOperation, "Cannot create VulkanSampler");
 }
 
 uint32_t SamplerState::getSamplerId() const {
-  return sampler_ ? sampler_->samplerId_ : 0;
+  const VulkanSampler* sampler = device_.getVulkanContext().samplers_.get(sampler_);
+  return sampler ? sampler->samplerId : 0;
 }
 
-} // namespace vulkan
+bool SamplerState::isYUV() const noexcept {
+  return desc_.yuvFormat != igl::TextureFormat::Invalid;
+}
 
-} // namespace igl
+} // namespace igl::vulkan

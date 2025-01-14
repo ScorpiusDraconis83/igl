@@ -49,7 +49,7 @@ template<int N>
 constexpr uint32_t iglCrc32ImplConstExprImpl(const char* p, uint32_t crc) {
   constexpr uint32_t crc_table[256] = {iglCrc256(0)};
   if (*p) {
-    uint8_t v = (uint8_t)*p;
+    const uint8_t v = (uint8_t)*p;
     return iglCrc32ImplConstExprImpl<N>(p + 1, (crc >> 8) ^ crc_table[(crc & 0xFF) ^ v]);
   }
   return crc;
@@ -66,7 +66,7 @@ constexpr uint32_t iglCrc32ImplConstExpr(const char* p, uint32_t crc) {
  * @returns CRC32 representation of data
  */
 constexpr uint32_t iglCrc32ConstExpr(const char* data) {
-  return ~iglCrc32ImplConstExpr(data, ~0);
+  return ~iglCrc32ImplConstExpr(data, ~0u);
 }
 #endif // defined(__cpp_constexpr)
 
@@ -105,7 +105,7 @@ class NameHandle {
    * @brief Returns a null terminated character array version of the name
    * @returns null terminated character array
    */
-  const char* toConstChar() const {
+  [[nodiscard]] const char* c_str() const {
     return name_.c_str();
   }
 
@@ -113,7 +113,7 @@ class NameHandle {
    * @brief Returns a reference to the actual name string
    * @returns Reference to the actual name string
    */
-  const std::string& toString() const {
+  [[nodiscard]] const std::string& toString() const {
     return name_;
   }
 
@@ -121,7 +121,7 @@ class NameHandle {
    * @brief Returns crc32 handle for the name string
    * @returns crc32 handle
    */
-  uint32_t getCrc32() const {
+  [[nodiscard]] uint32_t getCrc32() const {
     return crc32_;
   }
 
@@ -130,12 +130,39 @@ class NameHandle {
     return crc32_ == other.crc32_;
   }
 
-  NameHandle& operator=(const NameHandle& other) = default;
-  NameHandle& operator=(NameHandle&& other) noexcept = default;
-
   bool operator!=(const NameHandle& other) const {
     return !(*this == other);
   }
+
+  bool operator<(const NameHandle& other) const {
+    CHECK_VALID_CRC(other);
+    return (crc32_ < other.crc32_);
+  }
+
+  bool operator>=(const NameHandle& other) const {
+    return !(*this < other);
+  }
+
+  bool operator>(const NameHandle& other) const {
+    CHECK_VALID_CRC(other);
+    return (crc32_ > other.crc32_);
+  }
+
+  bool operator<=(const NameHandle& other) const {
+    return !(*this > other);
+  }
+
+  NameHandle& operator=(const NameHandle& other) {
+    if (crc32_ == other.crc32_) {
+      return *this;
+    }
+
+    crc32_ = other.crc32_;
+    name_ = other.name_;
+    return *this;
+  }
+
+  NameHandle& operator=(NameHandle&& other) noexcept = default;
 
   operator const char*() const {
     return name_.c_str();
@@ -143,7 +170,7 @@ class NameHandle {
 
  private:
 #if IGL_DEBUG
-  bool checkIsValidCrcCompare(const NameHandle& nh) const;
+  [[nodiscard]] bool checkIsValidCrcCompare(const NameHandle& nh) const;
 #endif
   uint32_t crc32_ = 0;
   std::string name_;
@@ -155,7 +182,7 @@ class NameHandle {
  * @return NameHandle that includes the name and its CRC32.
  */
 inline NameHandle genNameHandle(const std::string& name) {
-  return NameHandle(name, iglCrc32(name.c_str(), name.length()));
+  return {name, iglCrc32(name.c_str(), name.length())};
 }
 } // namespace igl
 
@@ -212,14 +239,22 @@ namespace std {
 
 template<>
 struct hash<igl::NameHandle> {
-  size_t operator()(igl::NameHandle const& key) const {
+  size_t operator()(const igl::NameHandle& key) const {
     return std::hash<uint32_t>()(key.getCrc32());
   }
 };
 
 template<>
+struct hash<std::pair<igl::NameHandle, igl::NameHandle>> {
+  size_t operator()(const std::pair<igl::NameHandle, igl::NameHandle>& key) const {
+    return std::hash<uint32_t>()(key.first.getCrc32()) ^
+           std::hash<uint32_t>()(key.second.getCrc32());
+  }
+};
+
+template<>
 struct hash<std::vector<igl::NameHandle>> {
-  size_t operator()(std::vector<igl::NameHandle> const& key) const;
+  size_t operator()(const std::vector<igl::NameHandle>& key) const;
 };
 
 } // namespace std

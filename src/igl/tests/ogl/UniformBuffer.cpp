@@ -24,12 +24,11 @@
 #pragma clang diagnostic ignored "-Wmissing-braces"
 #endif
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 // Use a 4x4 texture for this test
-#define OFFSCREEN_TEX_WIDTH 4
-#define OFFSCREEN_TEX_HEIGHT 4
+constexpr size_t OFFSCREEN_TEX_WIDTH = 4;
+constexpr size_t OFFSCREEN_TEX_HEIGHT = 4;
 #if IGL_OPENGL_ES
 #define FLOATING_POINT_TOLERANCE 0.0001
 #else
@@ -403,7 +402,7 @@ class UniformBufferTest : public ::testing::Test {
 
     Result ret;
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(offscreenTexture_ != nullptr);
 
     // Create input texture
@@ -412,7 +411,7 @@ class UniformBufferTest : public ::testing::Test {
                                  OFFSCREEN_TEX_HEIGHT,
                                  TextureDesc::TextureUsageBits::Sampled);
     inputTexture_ = iglDev_->createTexture(texDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(inputTexture_ != nullptr);
 
     // Create framebuffer using the offscreen texture
@@ -420,7 +419,7 @@ class UniformBufferTest : public ::testing::Test {
 
     framebufferDesc.colorAttachments[0].texture = offscreenTexture_;
     framebuffer_ = iglDev_->createFramebuffer(framebufferDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(framebuffer_ != nullptr);
 
     // Initialize render pass descriptor
@@ -450,7 +449,7 @@ class UniformBufferTest : public ::testing::Test {
     inputDesc.numAttributes = inputDesc.numInputBindings = 2;
 
     vertexInputState_ = iglDev_->createVertexInputState(inputDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vertexInputState_ != nullptr);
 
     // Initialize index buffer
@@ -461,7 +460,7 @@ class UniformBufferTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_IND);
 
     ib_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(ib_ != nullptr);
 
     // Initialize vertex and sampler buffers
@@ -470,7 +469,7 @@ class UniformBufferTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_VERT);
 
     vb_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vb_ != nullptr);
 
     bufDesc.type = BufferDesc::BufferTypeBits::Vertex;
@@ -478,11 +477,11 @@ class UniformBufferTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_UV);
 
     uv_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(uv_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
@@ -536,29 +535,29 @@ class UniformBufferTest : public ::testing::Test {
 TEST_F(UniformBufferTest, UniformBufferBinding) {
   Result ret;
   std::shared_ptr<IRenderPipelineState> pipelineState;
-  simd::float4 clearColor = {0.0, 0.0, 1.0, 1.0};
+  const simd::float4 clearColor = {0.0, 0.0, 1.0, 1.0};
   const auto rangeDesc = TextureRangeDesc::new2D(0, 0, OFFSCREEN_TEX_WIDTH, OFFSCREEN_TEX_HEIGHT);
   struct FragmentParameters {
-    simd::float1 testFloat;
-    simd::float2 testVec2;
-    simd::float3 testVec3;
-    simd::float4 testVec4;
+    simd::float1 testFloat{};
+    simd::float2 testVec2{};
+    simd::float3 testVec3{};
+    simd::float4 testVec4{};
 
-    bool testBool;
+    bool testBool{};
 
-    simd::int1 testInt;
-    simd::int2 testiVec2;
-    simd::int3 testiVec3;
-    simd::int4 testiVec4;
+    simd::int1 testInt{};
+    simd::int2 testiVec2{};
+    simd::int3 testiVec3{};
+    simd::int4 testiVec4{};
 
     simd::float2x2 testMat2;
     simd::float3x3 testMat3;
     simd::float4x4 testMat4;
-    simd::float4 backgroundColor;
+    simd::float4 backgroundColor{};
 
-    simd::float1 unsetFloat;
-    bool unsetBool;
-    simd::int1 unsetInt;
+    simd::float1 unsetFloat{};
+    bool unsetBool{};
+    simd::int1 unsetInt{};
   } fragmentParameters_;
 
   //-------------------------------------
@@ -585,7 +584,7 @@ TEST_F(UniformBufferTest, UniformBufferBinding) {
   // Create Pipeline
   //----------------
   pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(pipelineState != nullptr);
 
   //-------------------------------------
@@ -738,24 +737,25 @@ TEST_F(UniformBufferTest, UniformBufferBinding) {
   fragmentParameters_.unsetInt = {42};
 
   fragmentParamBuffer_ = iglDev_->createBuffer(fpDesc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(fragmentParamBuffer_ != nullptr);
 
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   std::shared_ptr<igl::IRenderCommandEncoder> cmds =
       cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -779,12 +779,12 @@ TEST_F(UniformBufferTest, UniformBufferBinding) {
   // Bind the uniform buffer
   //----------------
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
@@ -796,7 +796,8 @@ TEST_F(UniformBufferTest, UniformBufferBinding) {
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -830,7 +831,7 @@ TEST_F(UniformBufferTest, UniformBufferBinding) {
 TEST_F(UniformBufferTest, UniformArrayBinding) {
   Result ret;
   std::shared_ptr<IRenderPipelineState> pipelineState;
-  simd::float4 clearColor = {0.0, 0.0, 1.0, 1.0};
+  const simd::float4 clearColor = {0.0, 0.0, 1.0, 1.0};
   const auto rangeDesc = TextureRangeDesc::new2D(0, 0, OFFSCREEN_TEX_WIDTH, OFFSCREEN_TEX_HEIGHT);
 
   // We are purposely creating an unpacked structure to trigger the
@@ -880,26 +881,26 @@ TEST_F(UniformBufferTest, UniformArrayBinding) {
   };
 
   struct FragmentParameters {
-    std::array<Float1UnpackedData, 3> testFloat;
-    std::array<Float2UnpackedData, 3> testVec2;
-    std::array<simd::float3, 3> testVec3;
-    std::array<Float4UnpackedData, 3> testVec4;
+    std::array<Float1UnpackedData, 3> testFloat{};
+    std::array<Float2UnpackedData, 3> testVec2{};
+    std::array<simd::float3, 3> testVec3{};
+    std::array<Float4UnpackedData, 3> testVec4{};
 
-    std::array<BooleanUnpackedData, 3> testBool;
+    std::array<BooleanUnpackedData, 3> testBool{};
 
-    std::array<Int1UnpackedData, 3> testInt;
-    std::array<Int2UnpackedData, 3> testiVec2;
-    std::array<simd::int3, 3> testiVec3;
-    std::array<Int4UnpackedData, 3> testiVec4;
+    std::array<Int1UnpackedData, 3> testInt{};
+    std::array<Int2UnpackedData, 3> testiVec2{};
+    std::array<simd::int3, 3> testiVec3{};
+    std::array<Int4UnpackedData, 3> testiVec4{};
 
     std::array<simd::float2x2, 3> testMat2;
     std::array<simd::float3x3, 3> testMat3;
     std::array<simd::float4x4, 3> testMat4;
-    simd::float4 backgroundColor;
+    simd::float4 backgroundColor{};
 
-    std::array<simd::float1, 3> unsetFloat;
-    std::array<bool, 3> unsetBool;
-    std::array<simd::int1, 3> unsetInt;
+    std::array<simd::float1, 3> unsetFloat{};
+    std::array<bool, 3> unsetBool{};
+    std::array<simd::int1, 3> unsetInt{};
   } fragmentParameters_;
 
   //-------------------------------------
@@ -926,7 +927,7 @@ TEST_F(UniformBufferTest, UniformArrayBinding) {
   // Create Pipeline
   //----------------
   pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(pipelineState != nullptr);
 
   //-------------------------------------
@@ -1139,24 +1140,25 @@ TEST_F(UniformBufferTest, UniformArrayBinding) {
   fragmentParameters_.unsetInt[2] = {0};
 
   fragmentParamBuffer_ = iglDev_->createBuffer(fpDesc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(fragmentParamBuffer_ != nullptr);
 
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   std::shared_ptr<igl::IRenderCommandEncoder> cmds =
       cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -1180,12 +1182,12 @@ TEST_F(UniformBufferTest, UniformArrayBinding) {
   // Bind the uniform buffer
   //----------------
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
@@ -1197,7 +1199,8 @@ TEST_F(UniformBufferTest, UniformArrayBinding) {
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -1221,5 +1224,4 @@ TEST_F(UniformBufferTest, UniformArrayBinding) {
   }
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

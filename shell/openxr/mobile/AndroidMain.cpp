@@ -5,9 +5,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <android_native_app_glue.h>
+// @fb-only
+
 #include <igl/Common.h>
-//#define ATTACH_DEBUGGER
+#include <igl/Macros.h>
+
+#if IGL_PLATFORM_ANDROID
+#include <android_native_app_glue.h>
+#endif // IGL_PLATFORM_ANDROID
+
+#include <memory>
+#include <string>
+#include <vector>
+// #define ATTACH_DEBUGGER
 
 #ifdef ATTACH_DEBUGGER
 #include <unistd.h>
@@ -15,43 +25,95 @@
 
 #include <shell/openxr/XrApp.h>
 
+#if defined(USE_VULKAN_BACKEND)
+#include <shell/openxr/mobile/vulkan/XrAppImplVulkan.h>
+#elif defined(USE_OPENGL_BACKEND)
+#include <shell/openxr/mobile/opengl/XrAppImplGLES.h>
+#endif
+
+#if IGL_PLATFORM_WINDOWS
+#include "ShellScalingApi.h"
+#endif // IGL_PLATFORM_WINDOWS
+
+static XrInstance gInstance_;
+
+// This function cannot be declared as `static` due to our Android GitHub builds
+// @lint-ignore CLANGTIDY
+XrInstance getXrInstance() {
+  return gInstance_;
+}
+
+#if IGL_PLATFORM_ANDROID
+namespace {
+std::vector<std::string> gActionViewQueue;
+} // namespace
+
+extern "C" {
+void processActionView(JNIEnv* env, jstring data) {
+  if (env == nullptr || data == nullptr) {
+    return;
+  }
+  const jsize stringLength = env->GetStringUTFLength(data);
+  const char* stringChars = env->GetStringUTFChars(data, nullptr);
+  if (stringLength == 0 || stringChars == nullptr) {
+    return;
+  }
+  gActionViewQueue.emplace_back(stringChars, stringLength);
+  env->ReleaseStringUTFChars(data, stringChars);
+}
+
+JNIEXPORT void JNICALL
+Java_com_facebook_igl_shell_openxr_vulkan_MainActivity_onActionView(JNIEnv* env,
+                                                                    jclass /*clazz*/,
+                                                                    jstring data) {
+  processActionView(env, data);
+}
+
+JNIEXPORT void JNICALL
+Java_com_facebook_igl_shell_openxr_gles_MainActivity_onActionView(JNIEnv* env,
+                                                                  jclass /*clazz*/,
+                                                                  jstring data) {
+  processActionView(env, data);
+}
+}
+
 using namespace igl::shell::openxr;
 
-void handleInitWindow(const struct android_app* app) {
-  auto xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
+static void handleInitWindow(const struct android_app* app) {
+  auto* xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
   if (xrApp) {
     xrApp->setNativeWindow(app->window);
   }
 }
-void handleTermWindow(const struct android_app* app) {
-  auto xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
+static void handleTermWindow(const struct android_app* app) {
+  auto* xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
   if (xrApp) {
     xrApp->setNativeWindow(nullptr);
   }
 }
 
-void handleResume(const struct android_app* app) {
-  auto xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
+static void handleResume(const struct android_app* app) {
+  auto* xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
   if (xrApp) {
     xrApp->setResumed(true);
   }
 }
 
-void handlePause(const struct android_app* app) {
-  auto xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
+static void handlePause(const struct android_app* app) {
+  auto* xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
   if (xrApp) {
     xrApp->setResumed(false);
   }
 }
 
-void handleDestroy(const struct android_app* app) {
-  auto xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
+static void handleDestroy(const struct android_app* app) {
+  auto* xrApp = static_cast<igl::shell::openxr::XrApp*>(app->userData);
   if (xrApp) {
     xrApp->setNativeWindow(nullptr);
   }
 }
 
-void handleAppCmd(struct android_app* app, int32_t appCmd) {
+static void handleAppCmd(struct android_app* app, int32_t appCmd) {
   switch (appCmd) {
   case APP_CMD_INIT_WINDOW:
     IGL_LOG_INFO("APP_CMD_INIT_WINDOW");
@@ -79,27 +141,8 @@ void handleAppCmd(struct android_app* app, int32_t appCmd) {
   }
 }
 
-#if defined(USE_VULKAN_BACKEND)
-#include "vulkan/XrAppImplVulkan.h"
-#elif defined(USE_OPENGL_BACKEND)
-#include "opengl/XrAppImplGLES.h"
-// @fb-only
-// @fb-only
-#endif
-
-XrInstance gInstance_;
-XrInstance getXrInstance() {
-  return gInstance_;
-}
-
-// @fb-only
-// @fb-only
-// @fb-only
-// @fb-only
-// @fb-only
-
 void android_main(struct android_app* app) {
-  JNIEnv* Env;
+  JNIEnv* Env = nullptr;
   app->activity->vm->AttachCurrentThread(&Env, nullptr);
 
 #ifdef ATTACH_DEBUGGER
@@ -110,11 +153,8 @@ void android_main(struct android_app* app) {
   auto xrApp = std::make_unique<XrApp>(std::make_unique<mobile::XrAppImplVulkan>());
 #elif defined(USE_OPENGL_BACKEND)
   auto xrApp = std::make_unique<XrApp>(std::make_unique<mobile::XrAppImplGLES>());
-// @fb-only
-  // @fb-only
-  // @fb-only
 #endif
-  if (!xrApp->initialize(app)) {
+  if (!xrApp->initialize(app, {})) {
     return;
   }
 
@@ -125,7 +165,7 @@ void android_main(struct android_app* app) {
 
   while (app->destroyRequested == 0) {
     for (;;) {
-      int events;
+      int events = 0;
       struct android_poll_source* source = nullptr;
       // If the timeout is zero, returns immediately without blocking.
       // If the timeout is negative, waits indefinitely until an event appears.
@@ -144,8 +184,49 @@ void android_main(struct android_app* app) {
       continue;
     }
 
+    for (const auto& actionView : gActionViewQueue) {
+      xrApp->handleActionView(actionView);
+    }
+    gActionViewQueue.clear();
+
     xrApp->update();
   }
 
   app->activity->vm->DetachCurrentThread();
 }
+#else
+// To run via MetaXR Simulator or Monado.
+int main(int argc, const char* argv[]) {
+#if IGL_PLATFORM_WINDOWS
+  SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+#endif // IGL_PLATFORM_WINDOWS
+
+#if defined(USE_VULKAN_BACKEND)
+  // Do not present running on MetaXR Simulator. It has its own composition and present.
+  auto xrApp = std::make_unique<igl::shell::openxr::XrApp>(
+      std::make_unique<igl::shell::openxr::mobile::XrAppImplVulkan>(), false /* shouldPresent */);
+#elif defined(USE_OPENGL_BACKEND)
+  // Do not present running on MetaXR Simulator. It has its own composition and present.
+  auto xrApp = std::make_unique<igl::shell::openxr::XrApp>(
+      std::make_unique<igl::shell::openxr::mobile::XrAppImplGLES>(), false /* shouldPresent */);
+#endif
+  if (!xrApp->initialize(nullptr, {})) {
+    return 1;
+  }
+
+  gInstance_ = xrApp->instance();
+  xrApp->setResumed(true);
+
+  for (;;) {
+    xrApp->handleXrEvents();
+    if (!xrApp->sessionActive()) {
+      break;
+    }
+
+    xrApp->update();
+  }
+
+  return 0;
+}
+
+#endif // IGL_PLATFORM_ANDROID

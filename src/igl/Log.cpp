@@ -10,14 +10,13 @@
 #include <cstdarg>
 #include <cstdio>
 #include <igl/Core.h>
-#include <igl/Log.h>
 #include <mutex>
 #include <string>
 #include <unordered_set>
 
 #if IGL_PLATFORM_ANDROID
 #include <igl/android/LogDefault.h>
-#elif IGL_PLATFORM_WIN
+#elif IGL_PLATFORM_WINDOWS
 #include <igl/win/LogDefault.h>
 #endif
 
@@ -25,7 +24,7 @@
 static IGLLogHandlerFunc* GetHandle() {
 #if IGL_PLATFORM_ANDROID
   static IGLLogHandlerFunc sHandler = IGLAndroidLogDefaultHandler;
-#elif IGL_PLATFORM_WIN
+#elif IGL_PLATFORM_WINDOWS
   static IGLLogHandlerFunc sHandler = IGLWinLogDefaultHandler;
 #else
   static IGLLogHandlerFunc sHandler = IGLLogDefaultHandler;
@@ -36,7 +35,7 @@ static IGLLogHandlerFunc* GetHandle() {
 IGL_API int IGLLog(IGLLogLevel logLevel, const char* IGL_RESTRICT format, ...) {
   va_list ap;
   va_start(ap, format);
-  int result = IGLLogV(logLevel, format, ap);
+  const int result = IGLLogV(logLevel, format, ap);
   va_end(ap);
   return result;
 }
@@ -57,9 +56,9 @@ IGL_API int IGLLogOnce(IGLLogLevel logLevel, const char* IGL_RESTRICT format, ..
   FOLLY_POP_WARNING
   va_end(ap);
 
-  std::string msg(buffer);
+  const std::string msg(buffer);
   {
-    std::lock_guard<std::mutex> guard(s_loggedMessagesMutex);
+    const std::lock_guard<std::mutex> guard(s_loggedMessagesMutex);
     if (s_loggedMessages.count(msg) == 0) {
       result = IGLLogV(logLevel, format, apCopy);
       s_loggedMessages.insert(msg);
@@ -74,7 +73,7 @@ IGL_API int IGLLogV(IGLLogLevel logLevel, const char* IGL_RESTRICT format, va_li
   return (*GetHandle())(logLevel, format, ap);
 }
 
-IGL_API int IGLLogDefaultHandler(IGLLogLevel logLevel,
+IGL_API int IGLLogDefaultHandler(IGLLogLevel /*logLevel*/,
                                  const char* IGL_RESTRICT format,
                                  va_list ap) {
   FOLLY_PUSH_WARNING

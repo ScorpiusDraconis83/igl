@@ -17,6 +17,8 @@
 
 namespace igl {
 
+struct BindGroupBufferDesc;
+struct BindGroupTextureDesc;
 struct BufferDesc;
 struct CommandQueueDesc;
 struct ComputePipelineDesc;
@@ -45,11 +47,54 @@ class ITexture;
 class IVertexInputState;
 
 /**
+ * @brief InDevelopmentFeature is where you'd add in your own enum for testing out
+ * an IGL feature you are working on. Once you declare it, you'd set it with
+ * setDevelopmentFlags() from outside of IGL and then check for it with
+ * testDevelopmentFlags() inside of IGL.
+ *
+ * For the IGL data types without access to IDevice, you'd need to do some
+ * additional plumbing to pass the flag through.
+ *
+ * Note that none of this in-development code will be upstreamed. These flags
+ * are only here so you have a way to revert to a safe path while testing in
+ * production.
+ */
+
+// @fb-only
+ // @fb-only
+ // @fb-only
+enum class InDevelopementFeatures : uint8_t {
+  // Define your in-development feature enums here
+  DummyFeatureExample,
+};
+
+/**
  * @brief Interface to a GPU that is used to draw graphics or do parallel computation.
  */
 class IDevice : public ICapabilities {
  public:
   ~IDevice() override = default;
+
+  /*
+   * Create a new BindGroup for textures.
+   *
+   * Vulkan: If `compatiblePipeline` is provided, the resulting BindGroup will be populated with
+   * additional (dummy) textures and samplers in the binding slots where none were specified but are
+   * expected by GLSL shaders. This ensures that the BindGroup is compatible with GLSL shaders from
+   * the specified pipeline. If there's no pipeline specified, users must ensure all
+   * textures/samplers expected by shaders are provided in the BindGroup description.
+   */
+  virtual Holder<BindGroupTextureHandle> createBindGroup(
+      const BindGroupTextureDesc& desc,
+      const IRenderPipelineState* IGL_NULLABLE compatiblePipeline = nullptr,
+      Result* IGL_NULLABLE outResult = nullptr) = 0;
+  virtual Holder<BindGroupBufferHandle> createBindGroup(
+      const BindGroupBufferDesc& desc,
+      Result* IGL_NULLABLE outResult = nullptr) = 0;
+
+  virtual void destroy(igl::BindGroupTextureHandle handle) = 0;
+  virtual void destroy(igl::BindGroupBufferHandle handle) = 0;
+  virtual void destroy(igl::SamplerHandle handle) = 0;
 
   /**
    * @brief Creates a command queue.
@@ -206,7 +251,7 @@ class IDevice : public ICapabilities {
    * original `IDevice`.
    * @return Pointer to the underlying platform-specific device.
    */
-  virtual const IPlatformDevice& getPlatformDevice() const noexcept = 0;
+  [[nodiscard]] virtual const IPlatformDevice& getPlatformDevice() const noexcept = 0;
 
   /**
    * @brief Allow clients to verify that the scope that they are making IGL calls is current and
@@ -221,7 +266,7 @@ class IDevice : public ICapabilities {
    * @brief Returns the actual graphics API backing this IGL device (Metal, OpenGL, etc).
    * @return The type of the underlying backend.
    */
-  virtual BackendType getBackendType() const = 0;
+  [[nodiscard]] virtual BackendType getBackendType() const = 0;
 
   /**
    * @brief Returns the range of Z values in normalized device coordinates considered to be within
@@ -229,7 +274,7 @@ class IDevice : public ICapabilities {
    * how different backends handle NDC.
    * @return The Z value range within the viewing volume.
    */
-  virtual NormalizedZRange getNormalizedZRange() const {
+  [[nodiscard]] virtual NormalizedZRange getNormalizedZRange() const {
     return NormalizedZRange::NegOneToOne;
   }
 
@@ -237,7 +282,7 @@ class IDevice : public ICapabilities {
    * @brief Returns the number of draw calls made using this device.
    * @return The number of draw calls made so far.
    */
-  virtual size_t getCurrentDrawCount() const = 0;
+  [[nodiscard]] virtual size_t getCurrentDrawCount() const = 0;
 
   /**
    * @brief Creates a shader library with one or more shader modules.
@@ -284,7 +329,7 @@ class IDevice : public ICapabilities {
    * @see igl::IResourceTracker
    * @return Shared pointer to the tracker.
    */
-  std::shared_ptr<IResourceTracker> getResourceTracker() const noexcept {
+  [[nodiscard]] std::shared_ptr<IResourceTracker> getResourceTracker() const noexcept {
     return resourceTracker_;
   }
 
@@ -295,13 +340,56 @@ class IDevice : public ICapabilities {
    *  - Vulkan: Cyan
    // @fb-only
    */
-  Color backendDebugColor() const noexcept;
+  [[nodiscard]] Color backendDebugColor() const noexcept;
+
+  /**
+   * @brief Controls an opaque internal bit field that enables/disables certain
+   * in-development paths at run time.
+   *
+   * It is strongly recommended to set the fields during device creation or very near it.
+   *
+   * Some examples of the usage:
+   *     * Preserving the original path while making a particularly dangerous change
+   *     * Enabling a new IGL feature to a subset of users as an experiment.
+   */
+  bool testDevelopmentFlags(InDevelopementFeatures featureEnum) {
+    const uint8_t pos = static_cast<uint8_t>(featureEnum);
+    IGL_DEBUG_ASSERT(pos < 64);
+
+    return (inDevelopmentFlags_ & (1ull << pos)) != 0u;
+  }
+
+  /**
+   * @brief Set/Unset an In-Development Flag
+   * The pos/value is only meaningful to the client of IGL and whatever
+   * in-development IGL feature you have in your IGL code base. No
+   * in-development paths will be upstreamed or accepted into public IGL
+   */
+  void setDevelopmentFlags(InDevelopementFeatures featureEnum, bool val) {
+    const uint8_t pos = static_cast<uint8_t>(featureEnum);
+    IGL_DEBUG_ASSERT(pos < 64);
+
+    if (val) {
+      inDevelopmentFlags_ |= 1ull << pos;
+    } else {
+      inDevelopmentFlags_ &= ~(1ull << pos);
+    }
+  }
+
+  /**
+   * IGL can only be accessed by 1 thread at a time. Call this function to mark the current thread
+   * as the "owning" thread.
+   */
+  virtual void setCurrentThread() {
+  } // NOTE: for now, this is implemented only in IGL/Vulkan and IGL/OpenGL
 
  protected:
   virtual void beginScope();
   virtual void endScope();
-  TextureDesc sanitize(const TextureDesc& desc) const;
+  [[nodiscard]] TextureDesc sanitize(const TextureDesc& desc) const;
   IDevice() = default;
+
+  uint64_t inDevelopmentFlags_ = 0;
 
  private:
   bool defaultVerifyScope();
@@ -326,7 +414,7 @@ struct DeviceScope final {
    * @brief Creates a device scope associated with a given device.
    * @param device The device to be associated with the created scope.
    */
-  DeviceScope(IDevice& device);
+  explicit DeviceScope(IDevice& device);
   ~DeviceScope();
 
  private:

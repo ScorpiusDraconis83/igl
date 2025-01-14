@@ -11,14 +11,12 @@
 #include <igl/vulkan/Device.h>
 #include <igl/vulkan/VulkanShaderModule.h>
 
-namespace igl {
-
-namespace vulkan {
+namespace igl::vulkan {
 
 ShaderModule::ShaderModule(ShaderModuleInfo info,
                            std::shared_ptr<VulkanShaderModule> shaderModule) :
   IShaderModule(std::move(info)), module_(std::move(shaderModule)) {
-  IGL_ASSERT(module_);
+  IGL_DEBUG_ASSERT(module_);
 }
 
 VkShaderModule ShaderModule::getVkShaderModule(const std::shared_ptr<IShaderModule>& shaderModule) {
@@ -34,5 +32,4 @@ ShaderStages::ShaderStages(ShaderStagesDesc desc) : IShaderStages(std::move(desc
 ShaderLibrary::ShaderLibrary(std::vector<std::shared_ptr<IShaderModule>> modules) :
   IShaderLibrary(std::move(modules)) {}
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

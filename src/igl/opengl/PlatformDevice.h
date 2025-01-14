@@ -15,18 +15,14 @@
 namespace igl {
 
 class IFramebuffer;
-struct BufferDesc;
 struct FramebufferDesc;
-struct SamplerStateDesc;
 
 namespace opengl {
 
-class Buffer;
 class DestructionGuard;
 class Device;
 class Framebuffer;
 class IContext;
-class SamplerState;
 class TextureBufferExternal;
 
 /// opengl::PlatformDevice enables transitioning to IGL from legacy OpenGL code.
@@ -84,8 +80,8 @@ class PlatformDevice : public IPlatformDevice {
 
   std::shared_ptr<Framebuffer> createFramebuffer(const FramebufferDesc& desc,
                                                  Result* outResult) const;
-  std::shared_ptr<Framebuffer> createCurrentFramebuffer() const;
-  std::unique_ptr<TextureBufferExternal> createTextureBufferExternal(
+  [[nodiscard]] std::shared_ptr<Framebuffer> createCurrentFramebuffer() const;
+  [[nodiscard]] std::unique_ptr<TextureBufferExternal> createTextureBufferExternal(
       GLuint textureID,
       GLenum target,
       TextureDesc::TextureUsage usage,
@@ -93,9 +89,9 @@ class PlatformDevice : public IPlatformDevice {
       GLsizei height,
       TextureFormat format,
       GLsizei numLayers = 1) const;
-  DestructionGuard getDestructionGuard() const;
-  IContext& getContext() const;
-  const std::shared_ptr<IContext>& getSharedContext() const;
+  [[nodiscard]] DestructionGuard getDestructionGuard() const;
+  [[nodiscard]] IContext& getContext() const;
+  [[nodiscard]] const std::shared_ptr<IContext>& getSharedContext() const;
   void blitFramebuffer(const std::shared_ptr<IFramebuffer>& src,
                        int srcLeft,
                        int srcTop,
@@ -123,7 +119,7 @@ class PlatformDevice : public IPlatformDevice {
                               Result* outResult);
 
  protected:
-  bool isType(PlatformDeviceType t) const noexcept override {
+  [[nodiscard]] bool isType(PlatformDeviceType t) const noexcept override {
     return t == Type;
   }
 

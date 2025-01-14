@@ -16,7 +16,6 @@
 namespace igl {
 class ICommandBuffer;
 namespace opengl {
-class RenderPipelineState;
 
 class Buffer : public WithContext, public IBuffer {
  public:
@@ -26,14 +25,14 @@ class Buffer : public WithContext, public IBuffer {
          BufferDesc::BufferAPIHint requestedApiHints,
          BufferDesc::BufferType bufferType) :
     WithContext(context), requestedApiHints_(requestedApiHints), bufferType_(bufferType) {}
-  uint64_t gpuAddress(size_t) const override {
-    IGL_ASSERT_NOT_IMPLEMENTED();
+  [[nodiscard]] uint64_t gpuAddress(size_t /*offset*/) const override {
+    IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
     return 0;
   }
   virtual void initialize(const BufferDesc& desc, Result* outResult) = 0;
-  virtual Type getType() const noexcept = 0;
+  [[nodiscard]] virtual Type getType() const noexcept = 0;
 
-  BufferDesc::BufferAPIHint requestedApiHints() const noexcept override {
+  [[nodiscard]] BufferDesc::BufferAPIHint requestedApiHints() const noexcept override {
     return requestedApiHints_;
   }
 
@@ -58,15 +57,15 @@ class ArrayBuffer : public Buffer {
   void* map(const BufferRange& range, Result* outResult) override;
   void unmap() override;
 
-  BufferDesc::BufferAPIHint acceptedApiHints() const noexcept override {
+  [[nodiscard]] BufferDesc::BufferAPIHint acceptedApiHints() const noexcept override {
     return 0;
   }
 
-  ResourceStorage storage() const noexcept override {
+  [[nodiscard]] ResourceStorage storage() const noexcept override {
     return ResourceStorage::Managed;
   }
 
-  size_t getSizeInBytes() const override {
+  [[nodiscard]] size_t getSizeInBytes() const override {
     return size_;
   }
 
@@ -87,7 +86,7 @@ class ArrayBuffer : public Buffer {
 
   void bindForTarget(GLenum target);
 
-  Type getType() const noexcept override {
+  [[nodiscard]] Type getType() const noexcept override {
     return Type::Attribute;
   }
 
@@ -97,7 +96,7 @@ class ArrayBuffer : public Buffer {
 
   // the buffer target used by the GL glBufferXXX APIs
   // this must be set by each derived object during construction
-  GLenum target_;
+  GLenum target_{};
 
  private:
   size_t size_;
@@ -112,15 +111,15 @@ class UniformBlockBuffer : public ArrayBuffer {
                      BufferDesc::BufferType bufferType) :
     ArrayBuffer(context, requestedApiHints, bufferType) {}
 
-  Type getType() const noexcept override {
+  [[nodiscard]] Type getType() const noexcept override {
     return Type::UniformBlock;
   }
 
   void setBlockBinding(GLuint pid, GLuint blockIndex, GLuint bindingPoint);
   void bindBase(size_t index, Result* outResult);
-  void bindRange(size_t index, size_t offset, Result* outResult);
+  void bindRange(size_t index, size_t offset, size_t size, Result* outResult);
 
-  BufferDesc::BufferAPIHint acceptedApiHints() const noexcept override {
+  [[nodiscard]] BufferDesc::BufferAPIHint acceptedApiHints() const noexcept override {
     return BufferDesc::BufferAPIHintBits::UniformBlock;
   }
 };

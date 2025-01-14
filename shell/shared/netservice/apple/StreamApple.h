@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <shell/shared/netservice/Stream.h>
@@ -24,11 +26,11 @@ struct StreamAdapterApple final {
   [[nodiscard]] Stream::Status status() const noexcept;
   void close() noexcept;
 
-  Stream* stream() const noexcept {
+  [[nodiscard]] Stream* stream() const noexcept {
     return owner_;
   }
 
-  NSStream* nsStream() const noexcept {
+  [[nodiscard]] NSStream* nsStream() const noexcept {
     return stream_;
   }
 
@@ -62,7 +64,7 @@ struct InputStreamApple final : InputStream {
   }
 
  private:
-  NSInputStream* inputStream() const noexcept {
+  [[nodiscard]] NSInputStream* inputStream() const noexcept {
     return (NSInputStream*)streamAdapter_.nsStream();
   }
 
@@ -92,7 +94,7 @@ struct OutputStreamApple final : OutputStream {
   }
 
  private:
-  NSOutputStream* outputStream() const noexcept {
+  [[nodiscard]] NSOutputStream* outputStream() const noexcept {
     return (NSOutputStream*)streamAdapter_.nsStream();
   }
 

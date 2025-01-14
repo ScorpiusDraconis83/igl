@@ -14,10 +14,15 @@
 #include <cstdarg>
 #include <igl/Macros.h>
 
-enum class IGLLogLevel {
-  LOG_ERROR = 1,
-  LOG_WARNING,
-  LOG_INFO,
+enum IGLLogLevel {
+  // Was previously LOG_ERROR.
+  IGLLogError = 1,
+
+  // Was previously LOG_WARNING.
+  IGLLogWarning,
+
+  // Was previously LOG_INFO.
+  IGLLogInfo,
 };
 
 ///--------------------------------------
@@ -43,18 +48,18 @@ IGL_API IGLLogHandlerFunc IGLLogGetHandler(void);
 
 // Debug logging
 #if IGL_DEBUG || defined(IGL_FORCE_ENABLE_LOGS)
-#define IGL_LOG_ERROR(format, ...)                                        \
-  IGLLog(IGLLogLevel::LOG_ERROR, "[IGL] Error in (%s).\n", IGL_FUNCTION); \
-  IGLLog(IGLLogLevel::LOG_ERROR, (format), ##__VA_ARGS__)
-#define IGL_LOG_ERROR_ONCE(format, ...) IGLLogOnce(IGLLogLevel::LOG_ERROR, (format), ##__VA_ARGS__)
+#define IGL_LOG_ERROR(format, ...)                             \
+  IGLLog(IGLLogError, "[IGL] Error in (%s).\n", IGL_FUNCTION); \
+  IGLLog(IGLLogError, (format), ##__VA_ARGS__)
+#define IGL_LOG_ERROR_ONCE(format, ...) IGLLogOnce(IGLLogError, (format), ##__VA_ARGS__)
 
-#define IGL_LOG_INFO(format, ...) IGLLog(IGLLogLevel::LOG_INFO, (format), ##__VA_ARGS__)
-#define IGL_LOG_INFO_ONCE(format, ...) IGLLogOnce(IGLLogLevel::LOG_INFO, (format), ##__VA_ARGS__)
-#define IGL_DEBUG_LOG(format, ...) IGLLog(IGLLogLevel::LOG_INFO, (format), ##__VA_ARGS__)
+#define IGL_LOG_INFO(format, ...) IGLLog(IGLLogInfo, (format), ##__VA_ARGS__)
+#define IGL_LOG_INFO_ONCE(format, ...) IGLLogOnce(IGLLogInfo, (format), ##__VA_ARGS__)
+#define IGL_LOG_DEBUG(format, ...) IGLLog(IGLLogInfo, (format), ##__VA_ARGS__)
 #else
 #define IGL_LOG_ERROR(format, ...) static_cast<void>(0)
 #define IGL_LOG_ERROR_ONCE(format, ...) static_cast<void>(0)
 #define IGL_LOG_INFO(format, ...) static_cast<void>(0)
 #define IGL_LOG_INFO_ONCE(format, ...) static_cast<void>(0)
-#define IGL_DEBUG_LOG(format, ...) static_cast<void>(0)
+#define IGL_LOG_DEBUG(format, ...) static_cast<void>(0)
 #endif

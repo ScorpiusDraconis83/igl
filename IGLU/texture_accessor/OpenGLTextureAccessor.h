@@ -14,8 +14,7 @@
 #include <igl/Texture.h>
 #include <igl/opengl/GLIncludes.h>
 
-namespace iglu {
-namespace textureaccessor {
+namespace iglu::textureaccessor {
 
 class OpenGLTextureAccessor : public ITextureAccessor {
  public:
@@ -25,6 +24,7 @@ class OpenGLTextureAccessor : public ITextureAccessor {
                     std::shared_ptr<igl::ITexture> texture = nullptr) override;
   RequestStatus getRequestStatus() override;
   std::vector<unsigned char>& getBytes() override;
+  size_t copyBytes(unsigned char* ptr, size_t length) override;
 
  private:
   std::vector<unsigned char> latestBytesRead_;
@@ -41,5 +41,4 @@ class OpenGLTextureAccessor : public ITextureAccessor {
   bool textureAttached_ = false;
 };
 
-} // namespace textureaccessor
-} // namespace iglu
+} // namespace iglu::textureaccessor

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <cstdint>
@@ -60,7 +62,7 @@ struct Stream {
 struct InputStream : Stream {
   virtual int read(uint8_t* outBuffer, size_t maxLength) const noexcept = 0;
   virtual bool getBuffer(uint8_t*& outBuffer, size_t& outLength) const noexcept = 0;
-  virtual bool hasBytesAvailable() const noexcept = 0;
+  [[nodiscard]] virtual bool hasBytesAvailable() const noexcept = 0;
 };
 
 // ----------------------------------------------------------------------------

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <igl/opengl/GLFunc.h>
 
 #include <igl/IGL.h>
@@ -20,19 +22,28 @@
 #define IGL_GET_PROC_ADDRESS(funcName) nullptr
 #endif // IGL_EGL
 
+// When using OpenGL, Tracy needs glQueryCounterEXT to be defined, but it's not available in all
+// platforms or OpenGL versions. The following is a workaround to make Tracy work in all platforms.
+// Note: OpenGL has not been tested with Tracy yet, and that's why the workaround works with OpenGL
+#if defined(IGL_WITH_TRACY)
+#if !defined GL_TIMESTAMP && defined GL_TIMESTAMP_EXT
+extern "C" void glQueryCounterEXT(GLuint, GLenum) {}
+#endif
+#endif
+
 #define GLEXTENSION_DIRECT_CALL(funcName, funcType, ...) funcName(__VA_ARGS__);
 #define GLEXTENSION_DIRECT_CALL_WITH_RETURN(funcName, funcType, returnOnError, ...) \
   return funcName(__VA_ARGS__);
 
-#define GLEXTENSION_LOAD_AND_CALL(funcName, funcType, ...)           \
-  static funcType funcAddr = nullptr;                                \
-  if (funcAddr == nullptr) {                                         \
-    funcAddr = (funcType)IGL_GET_PROC_ADDRESS(#funcName);            \
-  }                                                                  \
-  if (funcAddr != nullptr) {                                         \
-    funcAddr(__VA_ARGS__);                                           \
-  } else {                                                           \
-    IGL_ASSERT_MSG(0, "Extension function " #funcName " not found"); \
+#define GLEXTENSION_LOAD_AND_CALL(funcName, funcType, ...)         \
+  static funcType funcAddr = nullptr;                              \
+  if (funcAddr == nullptr) {                                       \
+    funcAddr = (funcType)IGL_GET_PROC_ADDRESS(#funcName);          \
+  }                                                                \
+  if (funcAddr != nullptr) {                                       \
+    funcAddr(__VA_ARGS__);                                         \
+  } else {                                                         \
+    IGL_DEBUG_ABORT("Extension function " #funcName " not found"); \
   }
 #define GLEXTENSION_LOAD_AND_CALL_WITH_RETURN(funcName, funcType, returnOnError, ...) \
   static funcType funcAddr = nullptr;                                                 \
@@ -42,14 +53,14 @@
   if (funcAddr != nullptr) {                                                          \
     return funcAddr(__VA_ARGS__);                                                     \
   } else {                                                                            \
-    IGL_ASSERT_MSG(0, "Extension function " #funcName " not found");                  \
+    IGL_DEBUG_ABORT("Extension function " #funcName " not found");                    \
     return returnOnError;                                                             \
   }
 
 #define GLEXTENSION_UNAVAILABLE(funcName, funcType, ...) \
-  IGL_ASSERT_MSG(0, "Extension function " #funcName " not found");
+  IGL_DEBUG_ABORT("Extension function " #funcName " not found");
 #define GLEXTENSION_UNAVAILABLE_WITH_RETURN(funcName, funcType, returnOnError, ...) \
-  IGL_ASSERT_MSG(0, "Extension function " #funcName " not found");                  \
+  IGL_DEBUG_ABORT("Extension function " #funcName " not found");                    \
   return returnOnError;
 
 #if IGL_EGL || IGL_WGL
@@ -159,6 +170,16 @@ IGL_EXTERN_BEGIN
 #define CAN_CALL_glGetStringi CAN_CALL
 #else
 #define CAN_CALL_glGetStringi 0
+#endif
+#if defined(GL_VERSION_3_1) || defined(GL_ES_VERSION_3_0)
+#define CAN_CALL_glDrawElementsInstanced CAN_CALL
+#else
+#define CAN_CALL_glDrawElementsInstanced 0
+#endif
+#if defined(GL_VERSION_3_1) || defined(GL_ES_VERSION_3_0)
+#define CAN_CALL_glDrawArraysInstanced CAN_CALL
+#else
+#define CAN_CALL_glDrawArraysInstanced 0
 #endif
 #if defined(GL_VERSION_4_3) || defined(GL_ES_VERSION_3_2)
 #define CAN_CALL_glDebugMessageCallback CAN_CALL
@@ -286,7 +307,7 @@ GLuint iglGetDebugMessageLog(GLuint count,
                                       messageLog);
 }
 
-const GLubyte* iglGetStringi(GLenum name, GLint index) {
+const GLubyte* iglGetStringi(GLenum name, GLuint index) {
   GLEXTENSION_METHOD_BODY_WITH_RETURN(
       CAN_CALL_glGetStringi, glGetStringi, PFNIGLGETSTRINGIPROC, nullptr, name, index);
 }
@@ -382,6 +403,31 @@ void iglVertexAttribDivisor(GLuint index, GLuint divisor) {
                           PFNIGLVERTEXATTRIBDIVISORPROC,
                           index,
                           divisor);
+}
+
+void iglDrawElementsInstanced(GLenum mode,
+                              GLsizei count,
+                              GLenum type,
+                              const void* indices,
+                              GLsizei instancecount) {
+  GLEXTENSION_METHOD_BODY(CAN_CALL_glDrawElementsInstanced,
+                          glDrawElementsInstanced,
+                          PFNIGLDRAWELEMENTSINSTANCEDPROC,
+                          mode,
+                          count,
+                          type,
+                          indices,
+                          instancecount);
+}
+
+void iglDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount) {
+  GLEXTENSION_METHOD_BODY(CAN_CALL_glDrawArraysInstanced,
+                          glDrawArraysInstanced,
+                          PFNIGLDRAWARRAYSINSTANCEDPROC,
+                          mode,
+                          first,
+                          count,
+                          primcount);
 }
 
 ///--------------------------------------
@@ -500,8 +546,10 @@ void iglDispatchCompute(GLuint num_groups_x, GLuint num_groups_y, GLuint num_gro
 
 #if defined(GL_VERSION_4_0) || defined(GL_ES_VERSION_3_1) || defined(GL_ARB_draw_indirect)
 #define CAN_CALL_glDrawElementsIndirect CAN_CALL
+#define CAN_CALL_glDrawArraysIndirect CAN_CALL
 #else
 #define CAN_CALL_glDrawElementsIndirect 0
+#define CAN_CALL_glDrawArraysIndirect 0
 #endif
 
 void iglDrawElementsIndirect(GLenum mode, GLenum type, const GLvoid* indirect) {
@@ -510,6 +558,14 @@ void iglDrawElementsIndirect(GLenum mode, GLenum type, const GLvoid* indirect) {
                           PFNIGLDRAWELEMENTSINDIRECTPROC,
                           mode,
                           type,
+                          indirect);
+}
+
+void iglDrawArraysIndirect(GLenum mode, const GLvoid* indirect) {
+  GLEXTENSION_METHOD_BODY(CAN_CALL_glDrawArraysIndirect,
+                          glDrawArraysIndirect,
+                          PFNIGLDRAWARRAYSINDIRECTPROC,
+                          mode,
                           indirect);
 }
 
@@ -1123,6 +1179,24 @@ void iglDeleteVertexArrays(GLsizei n, const GLuint* vertexArrays) {
 void iglGenVertexArrays(GLsizei n, GLuint* vertexArrays) {
   GLEXTENSION_METHOD_BODY(
       CAN_CALL_glGenVertexArrays, glGenVertexArrays, PFNIGLGENVERTEXARRAYSPROC, n, vertexArrays);
+}
+
+///--------------------------------------
+/// MARK: - GL_ARB_polygon_offset_clamp
+
+#if defined(GL_ARB_polygon_offset_clamp)
+#define CAN_CALL_glPolygonOffsetClamp CAN_CALL
+#else
+#define CAN_CALL_glPolygonOffsetClamp 0
+#endif
+
+void iglPolygonOffsetClamp(float factor, float units, float clamp) {
+  GLEXTENSION_METHOD_BODY(CAN_CALL_glPolygonOffsetClamp,
+                          glPolygonOffsetClamp,
+                          PFNPOLYGONOFFSETCLAMPPROC,
+                          factor,
+                          units,
+                          clamp);
 }
 
 ///--------------------------------------

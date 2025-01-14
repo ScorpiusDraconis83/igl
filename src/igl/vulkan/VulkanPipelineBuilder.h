@@ -8,12 +8,10 @@
 #pragma once
 
 #include <igl/vulkan/Common.h>
-#include <igl/vulkan/VulkanFunctions.h>
 #include <igl/vulkan/VulkanHelpers.h>
 #include <vector>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 class VulkanPipelineBuilder final {
  public:
@@ -22,7 +20,7 @@ class VulkanPipelineBuilder final {
 
   VulkanPipelineBuilder& depthBiasEnable(bool enable);
   VulkanPipelineBuilder& depthWriteEnable(bool enable);
-  VulkanPipelineBuilder& depthCompareOp(VkCompareOp compareOp);
+  VulkanPipelineBuilder& depthCompareOp(VkCompareOp compareOp, bool writeDepthEnable);
   VulkanPipelineBuilder& dynamicState(VkDynamicState state);
   VulkanPipelineBuilder& dynamicStates(const std::vector<VkDynamicState>& states);
   VulkanPipelineBuilder& primitiveTopology(VkPrimitiveTopology topology);
@@ -88,5 +86,4 @@ class VulkanComputePipelineBuilder final {
   static uint32_t numPipelinesCreated_;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

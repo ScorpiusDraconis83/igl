@@ -10,14 +10,14 @@
 #include <igl/Common.h>
 #include <igl/Macros.h>
 
-#if IGL_PLATFORM_WIN || IGL_PLATFORM_ANDROID || IGL_PLATFORM_MACOS || IGL_PLATFORM_LINUX
+#if IGL_PLATFORM_WINDOWS || IGL_PLATFORM_ANDROID || IGL_PLATFORM_MACOSX || IGL_PLATFORM_IOS || \
+    IGL_PLATFORM_LINUX
 #include <igl/vulkan/HWDevice.h>
 #include <igl/vulkan/VulkanContext.h>
-#else
-#error "Unsupported testing platform"
+#include <igl/vulkan/VulkanFeatures.h>
 #endif
 
-#if IGL_PLATFORM_MACOS
+#if IGL_PLATFORM_MACOSX
 #include <igl/vulkan/moltenvk/MoltenVKHelpers.h>
 #endif
 
@@ -28,36 +28,50 @@ namespace igl::tests::util::device::vulkan {
 //
 // Used by clients to get an IGL device.
 //
-std::shared_ptr<::igl::IDevice> createTestDevice() {
-#if IGL_PLATFORM_MACOS
+
+igl::vulkan::VulkanContextConfig getContextConfig(bool enableValidation) {
+  igl::vulkan::VulkanContextConfig config;
+  config.enhancedShaderDebugging = false; // This causes issues for MoltenVK
+  config.enableValidation = enableValidation;
+  config.enableGPUAssistedValidation = enableValidation;
+
+#if IGL_PLATFORM_MACOSX
+  config.terminateOnValidationError = false;
+#elif IGL_DEBUG
+  config.terminateOnValidationError = enableValidation;
+#else
+  config.enableValidation = false;
+  config.terminateOnValidationError = false;
+#endif
+#ifdef IGL_DISABLE_VALIDATION
+  config.enableValidation = false;
+  config.terminateOnValidationError = false;
+#endif
+  config.swapChainColorSpace = igl::ColorSpace::SRGB_NONLINEAR;
+  config.enableExtraLogs = enableValidation;
+
+  return config;
+}
+
+std::shared_ptr<::igl::IDevice> createTestDevice(const igl::vulkan::VulkanContextConfig& config) {
+#if IGL_PLATFORM_MACOSX
   ::igl::vulkan::setupMoltenVKEnvironment();
 #endif
 
   std::shared_ptr<igl::IDevice> iglDev = nullptr;
   Result ret;
 
-  igl::vulkan::VulkanContextConfig config;
-  config.enhancedShaderDebugging = false; // This causes issues for MoltenVK
-#if IGL_PLATFORM_MACOS
-  config.terminateOnValidationError = false;
-#elif IGL_DEBUG
-  config.enableValidation = true;
-  config.terminateOnValidationError = true;
-#else
-  config.enableValidation = false;
-  config.terminateOnValidationError = false;
-#endif
-  config.swapChainColorSpace = igl::ColorSpace::SRGB_NONLINEAR;
-  config.enableExtraLogs = true;
-
   auto ctx = igl::vulkan::HWDevice::createContext(config, nullptr);
 
-  std::vector<HWDeviceDesc> devices = igl::vulkan::HWDevice::queryDevices(
-      *ctx.get(), HWDeviceQueryDesc(HWDeviceType::Unknown), &ret);
+  std::vector<HWDeviceDesc> devices =
+      igl::vulkan::HWDevice::queryDevices(*ctx, HWDeviceQueryDesc(HWDeviceType::Unknown), &ret);
 
   if (ret.isOk()) {
     std::vector<const char*> extraDeviceExtensions;
     extraDeviceExtensions.emplace_back(VK_KHR_MULTIVIEW_EXTENSION_NAME);
+
+    igl::vulkan::VulkanFeatures features(VK_API_VERSION_1_1, config);
+    features.populateWithAvailablePhysicalDeviceFeatures(*ctx, (VkPhysicalDevice)devices[0].guid);
 
     iglDev = igl::vulkan::HWDevice::create(std::move(ctx),
                                            devices[0],
@@ -65,6 +79,8 @@ std::shared_ptr<::igl::IDevice> createTestDevice() {
                                            0, // height,
                                            extraDeviceExtensions.size(),
                                            extraDeviceExtensions.data(),
+                                           &features,
+                                           "Test Device",
                                            &ret);
 
     if (!ret.isOk()) {
@@ -73,6 +89,10 @@ std::shared_ptr<::igl::IDevice> createTestDevice() {
   }
 
   return iglDev;
+}
+
+std::shared_ptr<::igl::IDevice> createTestDevice(bool enableValidation) {
+  return createTestDevice(getContextConfig(enableValidation));
 }
 
 } // namespace igl::tests::util::device::vulkan

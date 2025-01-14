@@ -7,24 +7,14 @@
 
 #include "VulkanTexture.h"
 
-#include <igl/vulkan/Common.h>
-#include <igl/vulkan/VulkanContext.h>
-#include <igl/vulkan/VulkanImage.h>
+namespace igl::vulkan {
 
-namespace igl {
-
-namespace vulkan {
-
-VulkanTexture::VulkanTexture(const VulkanContext& ctx,
-                             std::shared_ptr<VulkanImage> image,
-                             std::shared_ptr<VulkanImageView> imageView) :
-  ctx_(ctx), image_(std::move(image)), imageView_(std::move(imageView)) {
+VulkanTexture::VulkanTexture(VulkanImage&& image, VulkanImageView&& imageView) :
+  image_(std::move(image)), imageView_(std::move(imageView)) {
   IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_CREATE);
 
-  IGL_ASSERT(image_);
-  IGL_ASSERT(imageView_);
+  IGL_DEBUG_ASSERT(image_.valid());
+  IGL_DEBUG_ASSERT(imageView_.valid());
 }
 
-} // namespace vulkan
-
-} // namespace igl
+} // namespace igl::vulkan

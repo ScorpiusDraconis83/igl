@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <android/log.h>
 #include <android_native_app_glue.h>
 #include <cassert>
@@ -97,10 +99,10 @@ void initIGL() {
       *ctx.get(), HWDeviceQueryDesc(HWDeviceType::IntegratedGpu), nullptr);
   device_ =
       vulkan::HWDevice::create(std::move(ctx), devices[0], (uint32_t)width_, (uint32_t)height_);
-  IGL_ASSERT(device_);
+  IGL_DEBUG_ASSERT(device_);
 
   // Command queue: backed by different types of GPU HW queues
-  CommandQueueDesc desc{CommandQueueType::Graphics};
+  CommandQueueDesc desc{};
   commandQueue_ = device_->createCommandQueue(desc, nullptr);
 
   renderPass_.colorAttachments.push_back(igl::RenderPassDesc::ColorAttachmentDesc{});
@@ -114,7 +116,7 @@ void createFramebuffer(const std::shared_ptr<ITexture>& nativeDrawable) {
   FramebufferDesc framebufferDesc;
   framebufferDesc.colorAttachments[0].texture = nativeDrawable;
   framebuffer_ = device_->createFramebuffer(framebufferDesc, nullptr);
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 }
 
 void createRenderPipeline() {
@@ -122,7 +124,7 @@ void createRenderPipeline() {
     return;
   }
 
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 
   RenderPipelineDesc desc;
 
@@ -143,12 +145,12 @@ void createRenderPipeline() {
 std::shared_ptr<ITexture> getVulkanNativeDrawable() {
   const auto& vkPlatformDevice = device_->getPlatformDevice<igl::vulkan::PlatformDevice>();
 
-  IGL_ASSERT(vkPlatformDevice != nullptr);
+  IGL_DEBUG_ASSERT(vkPlatformDevice != nullptr);
 
   Result ret;
   std::shared_ptr<ITexture> drawable = vkPlatformDevice->createTextureFromNativeDrawable(&ret);
 
-  IGL_ASSERT(ret.isOk());
+  IGL_DEBUG_ASSERT(ret.isOk());
   return drawable;
 }
 
@@ -176,7 +178,7 @@ void render() {
 
   // VK_EXT_debug_utils support doesn't exist yet
   // commands->pushDebugGroupLabel("Render Triangle", igl::Color(1, 0, 0));
-  commands->draw(PrimitiveType::Triangle, 0, 3);
+  commands->draw(3, 0, 3);
   // commands->popDebugGroupLabel();
   commands->endEncoding();
 

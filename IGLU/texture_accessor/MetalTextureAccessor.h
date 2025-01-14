@@ -13,8 +13,7 @@
 #include <igl/IGL.h>
 #include <igl/Texture.h>
 
-namespace iglu {
-namespace textureaccessor {
+namespace iglu::textureaccessor {
 
 class MetalTextureAccessor : public ITextureAccessor {
  public:
@@ -24,6 +23,7 @@ class MetalTextureAccessor : public ITextureAccessor {
                     std::shared_ptr<igl::ITexture> texture = nullptr) override;
   RequestStatus getRequestStatus() override;
   std::vector<unsigned char>& getBytes() override;
+  size_t copyBytes(unsigned char* ptr, size_t length) override;
 
  private:
   std::vector<unsigned char> latestBytesRead_;
@@ -36,5 +36,4 @@ class MetalTextureAccessor : public ITextureAccessor {
   std::shared_ptr<igl::ICommandBuffer> lastRequestCommandBuffer = nullptr;
 };
 
-} // namespace textureaccessor
-} // namespace iglu
+} // namespace iglu::textureaccessor

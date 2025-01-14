@@ -7,240 +7,7 @@
 
 #pragma once
 
-///--------------------------------------
-/// MARK: - Platform
-
-///
-/// Platform conditionals specify which OS the code is being compiled for.
-///
-/// MICROSOFT(WIN)/APPLE/ANDROID/LINUX are mutually exclusive.
-/// MACOS/IOS(_SIMULATOR) are mutually exclusive.
-///
-/// The following set of conditionals exist and currently are supported:
-///
-/// Windows:
-///   IGL_PLATFORM_WIN
-/// Apple:
-///   IGL_PLATFORM_APPLE
-///   IGL_PLATFORM_IOS
-///   IGL_PLATFORM_IOS_SIMULATOR
-///   IGL_PLATFORM_MACCATALYST
-///   IGL_PLATFORM_MACOS
-/// Android:
-///   IGL_PLATFORM_ANDROID
-/// Linux:
-///   IGL_PLATFORM_LINUX
-/// WEBGL:
-///   IGL_PLATFORM_EMSCRIPTEN
-
-// clang-format off
-// Windows
-#if defined(_WIN32)
-  #define IGL_PLATFORM_WIN 1
-  #define IGL_PLATFORM_APPLE 0
-  #define IGL_PLATFORM_IOS 0
-  #define IGL_PLATFORM_IOS_SIMULATOR 0
-  #define IGL_PLATFORM_MACCATALYST 0
-  #define IGL_PLATFORM_MACOS 0
-  #define IGL_PLATFORM_ANDROID 0
-  #define IGL_PLATFORM_LINUX 0
-  #define IGL_PLATFORM_EMSCRIPTEN 0
-// Apple
-#elif defined (__APPLE__)
-  #define IGL_PLATFORM_WIN 0
-  #define IGL_PLATFORM_ANDROID 0
-  #define IGL_PLATFORM_LINUX 0
-  #define IGL_PLATFORM_APPLE 1
-  #define IGL_PLATFORM_EMSCRIPTEN 0
-
-  #include <TargetConditionals.h>
-  #if TARGET_OS_SIMULATOR
-    #define IGL_PLATFORM_IOS 1 // iOS Simulator is iOS
-    #define IGL_PLATFORM_IOS_SIMULATOR 1
-    #define IGL_PLATFORM_MACCATALYST 0
-    #define IGL_PLATFORM_MACOS 0
-  #elif TARGET_OS_MACCATALYST
-    #define IGL_PLATFORM_IOS 0
-    #define IGL_PLATFORM_IOS_SIMULATOR 0
-    #define IGL_PLATFORM_MACCATALYST 1
-    #define IGL_PLATFORM_MACOS 0
-  #elif TARGET_OS_IPHONE
-    #define IGL_PLATFORM_IOS 1
-    #define IGL_PLATFORM_IOS_SIMULATOR 0
-    #define IGL_PLATFORM_MACCATALYST 0
-    #define IGL_PLATFORM_MACOS 0
-  #elif TARGET_OS_OSX
-    #define IGL_PLATFORM_IOS 0
-    #define IGL_PLATFORM_IOS_SIMULATOR 0
-    #define IGL_PLATFORM_MACCATALYST 0
-    #define IGL_PLATFORM_MACOS 1
-  #else
-    #error "Unknown Apple target"
-  #endif
-// Android
-#elif defined(__ANDROID__)
-  #define IGL_PLATFORM_WIN 0
-  #define IGL_PLATFORM_APPLE 0
-  #define IGL_PLATFORM_IOS 0
-  #define IGL_PLATFORM_IOS_SIMULATOR 0
-  #define IGL_PLATFORM_MACCATALYST 0
-  #define IGL_PLATFORM_MACOS 0
-  #define IGL_PLATFORM_ANDROID 1
-  #define IGL_PLATFORM_LINUX 0
-  #define IGL_PLATFORM_EMSCRIPTEN 0
-// Linux
-#elif defined(__linux__)
-  #define IGL_PLATFORM_WIN 0
-  #define IGL_PLATFORM_APPLE 0
-  #define IGL_PLATFORM_IOS 0
-  #define IGL_PLATFORM_IOS_SIMULATOR 0
-  #define IGL_PLATFORM_MACCATALYST 0
-  #define IGL_PLATFORM_MACOS 0
-  #define IGL_PLATFORM_ANDROID 0
-  #define IGL_PLATFORM_LINUX 1
-  #define IGL_PLATFORM_EMSCRIPTEN 0
-#elif defined(__EMSCRIPTEN__)
-  #define IGL_PLATFORM_WIN 0
-  #define IGL_PLATFORM_APPLE 0
-  #define IGL_PLATFORM_IOS 0
-  #define IGL_PLATFORM_IOS_SIMULATOR 0
-  #define IGL_PLATFORM_MACCATALYST 0
-  #define IGL_PLATFORM_MACOS 0
-  #define IGL_PLATFORM_ANDROID 0
-  #define IGL_PLATFORM_LINUX 0
-  #define IGL_PLATFORM_EMSCRIPTEN 1
-// Rest
-#else
-  #define IGL_PLATFORM_WIN 0
-  #define IGL_PLATFORM_APPLE 0
-  #define IGL_PLATFORM_IOS 0
-  #define IGL_PLATFORM_IOS_SIMULATOR 0
-  #define IGL_PLATFORM_MACCATALYST 0
-  #define IGL_PLATFORM_MACOS 0
-  #define IGL_PLATFORM_ANDROID 0
-  #define IGL_PLATFORM_LINUX 0
-  #define IGL_PLATFORM_EMSCRIPTEN 0
-
-  #error "Platform not supported"
-#endif
-
-// IGL_PLATFORM_XR is for extended reality platforms like OpenXR
-#if !defined(IGL_PLATFORM_XR)
-  #define IGL_PLATFORM_XR 0
-#endif
-// clang-format on
-
-///--------------------------------------
-/// MARK: - Conditional backend support
-//
-// While libraries/utilities/helpers typically want to support all IGL backends, top level
-// applications might want to be more selective about them to minimize dependencies. IGL exposes
-// BUCK configs in defs.bzl to control backend support, and all BUCK modules that have a direct
-// dependency on IGL backends are expected to use the definitions provided there for integration.
-//
-// Furthermore, the macros below are provided so that IGL clients can safely wrap backend specific
-// code for conditional compilation.
-#ifdef IGL_BACKEND_ENABLE_METAL
-#define IGL_BACKEND_METAL 1
-#else
-#define IGL_BACKEND_METAL 0
-#endif
-
-#ifdef IGL_BACKEND_ENABLE_OPENGL
-#define IGL_BACKEND_OPENGL 1
-#else
-#define IGL_BACKEND_OPENGL 0
-#endif
-
-#ifdef IGL_BACKEND_ENABLE_VULKAN
-#define IGL_BACKEND_VULKAN 1
-#else
-#define IGL_BACKEND_VULKAN 0
-#endif
-
-// @fb-only
-// @fb-only
-// @fb-only
-// @fb-only
-// @fb-only
-
-///--------------------------------------
-/// MARK: - Angle support
-#if defined(FORCE_USE_ANGLE)
-#define IGL_ANGLE 1
-#define IGL_DISABLE_DEBUG_BUFFER_LABEL 1
-#else
-#define IGL_ANGLE 0
-#endif
-
-//--------------------------------------
-/// MARK: - Linux with SwiftShader
-//
-// IGL_PLATFORM_LINUX_SWIFTSHADER is a use case of IGL_PLATFORM_LINUX that uses
-// SwiftShader for rendering. For example, Rainbow uses SwiftShader in a CPU only
-// environment currently.
-#if defined(FORCE_USE_SWIFTSHADER) && defined(IGL_PLATFORM_LINUX)
-#define IGL_PLATFORM_LINUX_SWIFTSHADER 1
-#else
-#define IGL_PLATFORM_LINUX_SWIFTSHADER 0
-#endif
-
-//--------------------------------------
-/// MARK: - Linux with EGL
-//
-// IGL_PLATFORM_LINUX_USE_EGL enables EGL context on Linux, otherwise GLX is in use.
-// GLX is used in CMake builds for samples and shell apps to use OpenGL 4.6 on Linux desktops.
-#if IGL_PLATFORM_LINUX
-#ifndef IGL_PLATFORM_LINUX_USE_EGL
-#define IGL_PLATFORM_LINUX_USE_EGL 1
-#endif
-#else
-#ifndef IGL_PLATFORM_LINUX_USE_EGL
-#define IGL_PLATFORM_LINUX_USE_EGL 0
-#endif
-#endif
-
-///--------------------------------------
-/// MARK: - Debug
-
-// clang-format off
-#ifndef IGL_DEBUG // allow build systems to define it
-#if defined(IGL_BUILD_MODE_OPT)
-  // Forced opt build.
-  #define IGL_DEBUG 0
-#elif defined(XR_DEBUG_BUILD)
-  #define IGL_DEBUG 1
-#elif IGL_PLATFORM_ANDROID && !defined(FBANDROID_BUILD_MODE_OPT)
-  // On Android, buck defines NDEBUG for all builds so the test above doesn't work.
-  // FBANDROID_BUILD_MODE_OPT is only defined in production builds and was created
-  // with the exact purpose of allowing native code to differentiate build modes.
-  #define IGL_DEBUG 1
-#elif defined(_MSC_VER)
-  // Visual Studio never defines NDEBUG, it uses _DEBUG instead. See:
-  // https://learn.microsoft.com/en-us/cpp/c-runtime-library/debug?view=msvc-170
-  #if defined(_DEBUG)
-    #define IGL_DEBUG 1
-  #else
-    #define IGL_DEBUG 0
-  #endif
-#elif !defined(NDEBUG)
-  #define IGL_DEBUG 1
-#else
-  #define IGL_DEBUG 0
-#endif
-#endif
-// clang-format on
-
-// clang-format off
-#ifndef IGL_REPORT_ERROR_ENABLED
-  // Either we have IGL_DEBUG, or Windows/Linux/etc, since we don't have good detection mechanism there.
-  #if IGL_DEBUG || (!IGL_PLATFORM_APPLE && !IGL_PLATFORM_ANDROID)
-    #define IGL_REPORT_ERROR_ENABLED 1
-  #else
-    #define IGL_REPORT_ERROR_ENABLED 0
-  #endif
-#endif
-// clang-format on
+#include <igl/Config.h>
 
 ///--------------------------------------
 /// MARK: - String Macros
@@ -255,6 +22,33 @@
 // Convert Macro to String Literal
 #define IGL_TO_STRING(a) _IGL_TO_STRING_WRAPPER(a)
 #define _IGL_TO_STRING_WRAPPER(a) #a
+
+///--------------------------------------
+/// MARK: - Macro Helpers
+
+#define _IGL_EXPAND(x) x
+#define _IGL_ECHO(...) __VA_ARGS__
+#define _IGL_CALL(macro, args) macro args
+
+// Returns the 64th argument.
+// clang-format off
+#define _IGL_ARG_64(_,\
+   _64,_63,_62,_61,_60,_59,_58,_57,_56,_55,_54,_53,_52,_51,_50,_49, \
+   _48,_47,_46,_45,_44,_43,_42,_41,_40,_39,_38,_37,_36,_35,_34,_33, \
+   _32,_31,_30,_29,_28,_27,_26,_25,_24,_23,_22,_21,_20,_19,_18,_17, \
+   _16,_15,_14,_13,_12,_11,_10,_9,_8,_7,_6,_5,_4,_3,_2,ARG,...) ARG
+// clang-format on
+
+// Returns 0 if __VA_ARGS__ has a comma, 1 otherwise
+// Does NOT handle the case when __VA_ARGS__ is empty
+// Handles up to 64 arguments
+// clang-format off
+#define _IGL_HAS_COMMA(...) _IGL_EXPAND(_IGL_ARG_64(__VA_ARGS__, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ,1, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0))
+// clang-format on
 
 ///--------------------------------------
 /// MARK: - Linkage
@@ -297,7 +91,7 @@
 ///--------------------------------------
 /// MARK: - Inline
 
-#ifndef IGL_INLINE
+#if !defined(IGL_INLINE)
 #define IGL_INLINE inline
 #endif
 
@@ -319,7 +113,7 @@
 ///--------------------------------------
 /// MARK: - Newline
 
-#if IGL_PLATFORM_WIN
+#if IGL_PLATFORM_WINDOWS
 #define IGL_NEWLINE "\r\n"
 #else
 #define IGL_NEWLINE "\n"
@@ -328,13 +122,13 @@
 ///--------------------------------------
 /// MARK: - C++17 attributes (these should be inlined after all of our compilers are on c++17)
 
-#ifdef __has_cpp_attribute
+#if defined(__has_cpp_attribute)
 #if __has_cpp_attribute(maybe_unused)
 #define IGL_MAYBE_UNUSED [[maybe_unused]]
 #endif
 #endif
 
-#ifndef IGL_MAYBE_UNUSED
+#if !defined(IGL_MAYBE_UNUSED)
 #define IGL_MAYBE_UNUSED
 #endif
 
@@ -344,7 +138,7 @@
 // not all control paths return a value
 #if defined(_MSC_VER) || defined(__GNUC__)
 #define IGL_UNREACHABLE_RETURN(value) \
-  IGL_ASSERT_NOT_REACHED();           \
+  IGL_DEBUG_ASSERT_NOT_REACHED();     \
   return value;
 #else
 #define IGL_UNREACHABLE_RETURN(value)
@@ -430,10 +224,20 @@
 #define IGL_PROFILER_FRAME(name)
 #endif // IGL_WITH_TRACY
 
-#ifndef IGL_ENUM_TO_STRING
+#if !defined(IGL_ENUM_TO_STRING)
 #define IGL_ENUM_TO_STRING(enum, res) \
   case enum ::res:                    \
     return IGL_TO_STRING(res);
 #endif // IGL_ENUM_TO_STRING
 
+// Define this to 1 to enable shader dumping. Currently only the Vulkan Device supports it.
+// It will dump the SPIR-V code into files in the specified path below in
+// Device::createShaderModule(...)
 #define IGL_SHADER_DUMP 0
+
+// Replace IGL_SHADER_DUMP_PATH with your own path according to the platform
+// Ex. for Android your filepath should be specific to the package name:
+// "/sdcard/Android/data/<packageName>/files/"
+// @fb-only An example path used with the CodecAvatars app:
+// @fb-only "/sdcard/Android/data/com.meta.ar.codecavatars/files/"
+#define IGL_SHADER_DUMP_PATH "/path/to/output/file/"

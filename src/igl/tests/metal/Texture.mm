@@ -14,8 +14,7 @@
 #include <gtest/gtest.h>
 #include <utility>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 #define OFFSCREEN_TEX_WIDTH 2
 #define OFFSCREEN_TEX_HEIGHT 2
@@ -78,7 +77,7 @@ TEST_F(TextureMTLTest, ConstructionFromMTLTexture) {
 // Test upload
 TEST_F(TextureMTLTest, Upload) {
   const auto texRangeDesc = TextureRangeDesc();
-  Result res = texture_->upload(texRangeDesc, nullptr);
+  const Result res = texture_->upload(texRangeDesc, nullptr);
   ASSERT_TRUE(res.isOk());
 }
 
@@ -103,15 +102,15 @@ TEST_F(TextureMTLTest, GetMipmapsCount) {
   }
 
   miptexDesc.numMipLevels = targetlevel; // log(16) - 1
-  std::shared_ptr<ITexture> mipTexture = device_->createTexture(miptexDesc, &res);
+  const std::shared_ptr<ITexture> mipTexture = device_->createTexture(miptexDesc, &res);
   ASSERT_TRUE(res.isOk());
 
   auto mtlTexture = std::static_pointer_cast<metal::Texture>(mipTexture);
   mtlTexture->generateMipmap(*cmdQueue_);
 
   // Wait for completion
-  CommandBufferDesc desc = {};
-  std::shared_ptr<ICommandBuffer> cmdBuf = cmdQueue_->createCommandBuffer(desc, &res);
+  const CommandBufferDesc desc = {};
+  const std::shared_ptr<ICommandBuffer> cmdBuf = cmdQueue_->createCommandBuffer(desc, &res);
   id<MTLCommandBuffer> mtlCmdBuf = static_cast<igl::metal::CommandBuffer&>(*cmdBuf).get();
   [mtlCmdBuf commit];
   cmdBuf->waitUntilCompleted();
@@ -171,19 +170,19 @@ static std::shared_ptr<igl::ITexture> createCVPixelBufferTextureWithSize(
     const size_t height,
     const std::shared_ptr<igl::IDevice>& device,
     Result& outResult) {
-  igl::BackendType backend = device->getBackendType();
+  const igl::BackendType backend = device->getBackendType();
   CVPixelBufferRef pixelBuffer = nullptr;
   NSDictionary* bufferAttributes = @{
     (NSString*)kCVPixelBufferIOSurfacePropertiesKey : @{},
     (NSString*)kCVPixelBufferMetalCompatibilityKey : @(backend == igl::BackendType::Metal),
   };
 
-  CVReturn result = CVPixelBufferCreate(kCFAllocatorDefault,
-                                        width,
-                                        height,
-                                        kCVPixelFormatType_32BGRA,
-                                        (__bridge CFDictionaryRef)(bufferAttributes),
-                                        &pixelBuffer);
+  const CVReturn result = CVPixelBufferCreate(kCFAllocatorDefault,
+                                              width,
+                                              height,
+                                              kCVPixelFormatType_32BGRA,
+                                              (__bridge CFDictionaryRef)(bufferAttributes),
+                                              &pixelBuffer);
   if (result != kCVReturnSuccess) {
     Result::setResult(&outResult,
                       Result::Code::RuntimeError,
@@ -191,7 +190,7 @@ static std::shared_ptr<igl::ITexture> createCVPixelBufferTextureWithSize(
     return nullptr;
   }
 
-  auto platformDevice = device->getPlatformDevice<igl::metal::PlatformDevice>();
+  auto* platformDevice = device->getPlatformDevice<igl::metal::PlatformDevice>();
   std::shared_ptr<igl::ITexture> texture =
       platformDevice->createTextureFromNativePixelBuffer(pixelBuffer, format, 0, &outResult);
   if (!outResult.isOk()) {
@@ -225,146 +224,146 @@ TEST_F(TextureMTLTest, createTextureFromNativePixelBufferWithInvalidFormat) {
 }
 
 TEST_F(TextureMTLTest, ConvertTextureFormats) {
-  std::vector<TextureFormat> inputFormats = {
-    TextureFormat::A_UNorm8,
-    TextureFormat::R_UNorm8,
-    TextureFormat::R_F16,
-    TextureFormat::R_UInt16,
-#if !IGL_PLATFORM_MACOS
-    TextureFormat::B5G5R5A1_UNorm,
+  const std::vector<TextureFormat> inputFormats = {
+      TextureFormat::A_UNorm8,
+      TextureFormat::R_UNorm8,
+      TextureFormat::R_F16,
+      TextureFormat::R_UInt16,
+#if !IGL_PLATFORM_MACOSX
+      TextureFormat::B5G5R5A1_UNorm,
 #endif
-#if !(IGL_PLATFORM_MACOS || IGL_PLATFORM_IOS_SIMULATOR)
-    // https://developer.apple.com/documentation/metal/developing_metal_apps_that_run_in_simulator
-    TextureFormat::B5G6R5_UNorm,
-    TextureFormat::ABGR_UNorm4,
+#if !(IGL_PLATFORM_MACOSX || IGL_PLATFORM_IOS_SIMULATOR)
+      // https://developer.apple.com/documentation/metal/developing_metal_apps_that_run_in_simulator
+      TextureFormat::B5G6R5_UNorm,
+      TextureFormat::ABGR_UNorm4,
 #endif
-    TextureFormat::RG_UNorm8,
-    TextureFormat::R4G2B2_UNorm_Apple,
-    TextureFormat::R4G2B2_UNorm_Rev_Apple,
-    TextureFormat::RGBA_UNorm8,
-    TextureFormat::BGRA_UNorm8,
-    TextureFormat::RG_F16,
-    TextureFormat::RG_UInt16,
-    TextureFormat::RGB10_A2_UNorm_Rev,
-    TextureFormat::RGB10_A2_Uint_Rev,
-    TextureFormat::BGR10_A2_Unorm,
-    TextureFormat::R_F32,
-    TextureFormat::RGBA_F16,
-    TextureFormat::RGBA_UInt32,
-    TextureFormat::RGBA_F32,
-#if !IGL_PLATFORM_MACOS
-    TextureFormat::RGBA_ASTC_4x4,
-    TextureFormat::SRGB8_A8_ASTC_4x4,
-    TextureFormat::RGBA_ASTC_5x4,
-    TextureFormat::SRGB8_A8_ASTC_5x4,
-    TextureFormat::RGBA_ASTC_5x5,
-    TextureFormat::SRGB8_A8_ASTC_5x5,
-    TextureFormat::RGBA_ASTC_6x5,
-    TextureFormat::SRGB8_A8_ASTC_6x5,
-    TextureFormat::RGBA_ASTC_6x6,
-    TextureFormat::SRGB8_A8_ASTC_6x6,
-    TextureFormat::RGBA_ASTC_8x5,
-    TextureFormat::SRGB8_A8_ASTC_8x5,
-    TextureFormat::RGBA_ASTC_8x6,
-    TextureFormat::SRGB8_A8_ASTC_8x6,
-    TextureFormat::RGBA_ASTC_8x8,
-    TextureFormat::SRGB8_A8_ASTC_8x8,
-    TextureFormat::RGBA_ASTC_10x5,
-    TextureFormat::SRGB8_A8_ASTC_10x5,
-    TextureFormat::RGBA_ASTC_10x6,
-    TextureFormat::SRGB8_A8_ASTC_10x6,
-    TextureFormat::RGBA_ASTC_10x8,
-    TextureFormat::SRGB8_A8_ASTC_10x8,
-    TextureFormat::RGBA_ASTC_10x10,
-    TextureFormat::SRGB8_A8_ASTC_10x10,
-    TextureFormat::RGBA_ASTC_12x10,
-    TextureFormat::SRGB8_A8_ASTC_12x10,
-    TextureFormat::RGBA_ASTC_12x12,
-    TextureFormat::SRGB8_A8_ASTC_12x12,
-    TextureFormat::RGBA_PVRTC_2BPPV1,
-    TextureFormat::RGB_PVRTC_2BPPV1,
-    TextureFormat::RGBA_PVRTC_4BPPV1,
-    TextureFormat::RGB_PVRTC_4BPPV1,
-    TextureFormat::RGB8_ETC1,
-    TextureFormat::RGB8_ETC2,
-    TextureFormat::SRGB8_ETC2,
-    TextureFormat::RGBA8_EAC_ETC2,
-    TextureFormat::SRGB8_A8_EAC_ETC2,
-    TextureFormat::RG_EAC_UNorm,
-    TextureFormat::RG_EAC_SNorm,
-    TextureFormat::R_EAC_UNorm,
-    TextureFormat::R_EAC_SNorm,
+      TextureFormat::RG_UNorm8,
+      TextureFormat::R4G2B2_UNorm_Apple,
+      TextureFormat::R4G2B2_UNorm_Rev_Apple,
+      TextureFormat::RGBA_UNorm8,
+      TextureFormat::BGRA_UNorm8,
+      TextureFormat::RG_F16,
+      TextureFormat::RG_UInt16,
+      TextureFormat::RGB10_A2_UNorm_Rev,
+      TextureFormat::RGB10_A2_Uint_Rev,
+      TextureFormat::BGR10_A2_Unorm,
+      TextureFormat::R_F32,
+      TextureFormat::RG_F32,
+      TextureFormat::RGBA_F16,
+      TextureFormat::RGBA_UInt32,
+      TextureFormat::RGBA_F32,
+#if !IGL_PLATFORM_MACOSX
+      TextureFormat::RGBA_ASTC_4x4,
+      TextureFormat::SRGB8_A8_ASTC_4x4,
+      TextureFormat::RGBA_ASTC_5x4,
+      TextureFormat::SRGB8_A8_ASTC_5x4,
+      TextureFormat::RGBA_ASTC_5x5,
+      TextureFormat::SRGB8_A8_ASTC_5x5,
+      TextureFormat::RGBA_ASTC_6x5,
+      TextureFormat::SRGB8_A8_ASTC_6x5,
+      TextureFormat::RGBA_ASTC_6x6,
+      TextureFormat::SRGB8_A8_ASTC_6x6,
+      TextureFormat::RGBA_ASTC_8x5,
+      TextureFormat::SRGB8_A8_ASTC_8x5,
+      TextureFormat::RGBA_ASTC_8x6,
+      TextureFormat::SRGB8_A8_ASTC_8x6,
+      TextureFormat::RGBA_ASTC_8x8,
+      TextureFormat::SRGB8_A8_ASTC_8x8,
+      TextureFormat::RGBA_ASTC_10x5,
+      TextureFormat::SRGB8_A8_ASTC_10x5,
+      TextureFormat::RGBA_ASTC_10x6,
+      TextureFormat::SRGB8_A8_ASTC_10x6,
+      TextureFormat::RGBA_ASTC_10x8,
+      TextureFormat::SRGB8_A8_ASTC_10x8,
+      TextureFormat::RGBA_ASTC_10x10,
+      TextureFormat::SRGB8_A8_ASTC_10x10,
+      TextureFormat::RGBA_ASTC_12x10,
+      TextureFormat::SRGB8_A8_ASTC_12x10,
+      TextureFormat::RGBA_ASTC_12x12,
+      TextureFormat::SRGB8_A8_ASTC_12x12,
+      TextureFormat::RGBA_PVRTC_2BPPV1,
+      TextureFormat::RGB_PVRTC_2BPPV1,
+      TextureFormat::RGBA_PVRTC_4BPPV1,
+      TextureFormat::RGB_PVRTC_4BPPV1,
+      TextureFormat::RGB8_ETC1,
+      TextureFormat::RGB8_ETC2,
+      TextureFormat::SRGB8_ETC2,
+      TextureFormat::RGBA8_EAC_ETC2,
+      TextureFormat::SRGB8_A8_EAC_ETC2,
+      TextureFormat::RG_EAC_UNorm,
+      TextureFormat::RG_EAC_SNorm,
+      TextureFormat::R_EAC_UNorm,
+      TextureFormat::R_EAC_SNorm,
 #endif
-    TextureFormat::Z_UNorm16,
-    TextureFormat::Z_UNorm24,
-    TextureFormat::Z_UNorm32,
-    TextureFormat::S8_UInt_Z24_UNorm,
-    TextureFormat::S8_UInt_Z32_UNorm,
-    TextureFormat::S_UInt8
-  };
+      TextureFormat::Z_UNorm16,
+      TextureFormat::Z_UNorm24,
+      TextureFormat::Z_UNorm32,
+      TextureFormat::S8_UInt_Z24_UNorm,
+      TextureFormat::S8_UInt_Z32_UNorm,
+      TextureFormat::S_UInt8};
 
-  std::vector<TextureFormat> invalidTextureFormats = {
-    TextureFormat::Invalid,
-    TextureFormat::L_UNorm8,
-#if IGL_PLATFORM_MACOS
-    TextureFormat::B5G5R5A1_UNorm,
+  const std::vector<TextureFormat> invalidTextureFormats = {
+      TextureFormat::Invalid,
+      TextureFormat::L_UNorm8,
+#if IGL_PLATFORM_MACOSX
+      TextureFormat::B5G5R5A1_UNorm,
 #endif
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_IOS_SIMULATOR
-    TextureFormat::B5G6R5_UNorm,
-    TextureFormat::ABGR_UNorm4,
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_IOS_SIMULATOR
+      TextureFormat::B5G6R5_UNorm,
+      TextureFormat::ABGR_UNorm4,
 #endif
-    TextureFormat::LA_UNorm8,
-    TextureFormat::R5G5B5A1_UNorm,
-    TextureFormat::RGBX_UNorm8,
-    TextureFormat::BGRA_UNorm8_Rev,
-    TextureFormat::RGB_F16,
-    TextureFormat::RGB_F32,
-#if IGL_PLATFORM_MACOS
-    TextureFormat::RGBA_ASTC_4x4,
-    TextureFormat::SRGB8_A8_ASTC_4x4,
-    TextureFormat::RGBA_ASTC_5x4,
-    TextureFormat::SRGB8_A8_ASTC_5x4,
-    TextureFormat::RGBA_ASTC_5x5,
-    TextureFormat::SRGB8_A8_ASTC_5x5,
-    TextureFormat::RGBA_ASTC_6x5,
-    TextureFormat::SRGB8_A8_ASTC_6x5,
-    TextureFormat::RGBA_ASTC_6x6,
-    TextureFormat::SRGB8_A8_ASTC_6x6,
-    TextureFormat::RGBA_ASTC_8x5,
-    TextureFormat::SRGB8_A8_ASTC_8x5,
-    TextureFormat::RGBA_ASTC_8x6,
-    TextureFormat::SRGB8_A8_ASTC_8x6,
-    TextureFormat::RGBA_ASTC_8x8,
-    TextureFormat::SRGB8_A8_ASTC_8x8,
-    TextureFormat::RGBA_ASTC_10x5,
-    TextureFormat::SRGB8_A8_ASTC_10x5,
-    TextureFormat::RGBA_ASTC_10x6,
-    TextureFormat::SRGB8_A8_ASTC_10x6,
-    TextureFormat::RGBA_ASTC_10x8,
-    TextureFormat::SRGB8_A8_ASTC_10x8,
-    TextureFormat::RGBA_ASTC_10x10,
-    TextureFormat::SRGB8_A8_ASTC_10x10,
-    TextureFormat::RGBA_ASTC_12x10,
-    TextureFormat::SRGB8_A8_ASTC_12x10,
-    TextureFormat::RGBA_ASTC_12x12,
-    TextureFormat::SRGB8_A8_ASTC_12x12,
-    TextureFormat::RGBA_PVRTC_2BPPV1,
-    TextureFormat::RGB_PVRTC_2BPPV1,
-    TextureFormat::RGBA_PVRTC_4BPPV1,
-    TextureFormat::RGB_PVRTC_4BPPV1,
-    TextureFormat::RGB8_ETC1,
-    TextureFormat::RGB8_ETC2,
-    TextureFormat::SRGB8_ETC2,
+      TextureFormat::LA_UNorm8,
+      TextureFormat::R5G5B5A1_UNorm,
+      TextureFormat::RGBX_UNorm8,
+      TextureFormat::BGRA_UNorm8_Rev,
+      TextureFormat::RGB_F16,
+      TextureFormat::RGB_F32,
+#if IGL_PLATFORM_MACOSX
+      TextureFormat::RGBA_ASTC_4x4,
+      TextureFormat::SRGB8_A8_ASTC_4x4,
+      TextureFormat::RGBA_ASTC_5x4,
+      TextureFormat::SRGB8_A8_ASTC_5x4,
+      TextureFormat::RGBA_ASTC_5x5,
+      TextureFormat::SRGB8_A8_ASTC_5x5,
+      TextureFormat::RGBA_ASTC_6x5,
+      TextureFormat::SRGB8_A8_ASTC_6x5,
+      TextureFormat::RGBA_ASTC_6x6,
+      TextureFormat::SRGB8_A8_ASTC_6x6,
+      TextureFormat::RGBA_ASTC_8x5,
+      TextureFormat::SRGB8_A8_ASTC_8x5,
+      TextureFormat::RGBA_ASTC_8x6,
+      TextureFormat::SRGB8_A8_ASTC_8x6,
+      TextureFormat::RGBA_ASTC_8x8,
+      TextureFormat::SRGB8_A8_ASTC_8x8,
+      TextureFormat::RGBA_ASTC_10x5,
+      TextureFormat::SRGB8_A8_ASTC_10x5,
+      TextureFormat::RGBA_ASTC_10x6,
+      TextureFormat::SRGB8_A8_ASTC_10x6,
+      TextureFormat::RGBA_ASTC_10x8,
+      TextureFormat::SRGB8_A8_ASTC_10x8,
+      TextureFormat::RGBA_ASTC_10x10,
+      TextureFormat::SRGB8_A8_ASTC_10x10,
+      TextureFormat::RGBA_ASTC_12x10,
+      TextureFormat::SRGB8_A8_ASTC_12x10,
+      TextureFormat::RGBA_ASTC_12x12,
+      TextureFormat::SRGB8_A8_ASTC_12x12,
+      TextureFormat::RGBA_PVRTC_2BPPV1,
+      TextureFormat::RGB_PVRTC_2BPPV1,
+      TextureFormat::RGBA_PVRTC_4BPPV1,
+      TextureFormat::RGB_PVRTC_4BPPV1,
+      TextureFormat::RGB8_ETC1,
+      TextureFormat::RGB8_ETC2,
+      TextureFormat::SRGB8_ETC2,
 #endif
-    TextureFormat::RGB8_Punchthrough_A1_ETC2,
-    TextureFormat::SRGB8_Punchthrough_A1_ETC2,
-#if IGL_PLATFORM_MACOS
-    TextureFormat::RGBA8_EAC_ETC2,
-    TextureFormat::SRGB8_A8_EAC_ETC2,
-    TextureFormat::RG_EAC_UNorm,
-    TextureFormat::RG_EAC_SNorm,
-    TextureFormat::R_EAC_UNorm,
-    TextureFormat::R_EAC_SNorm,
+      TextureFormat::RGB8_Punchthrough_A1_ETC2,
+      TextureFormat::SRGB8_Punchthrough_A1_ETC2,
+#if IGL_PLATFORM_MACOSX
+      TextureFormat::RGBA8_EAC_ETC2,
+      TextureFormat::SRGB8_A8_EAC_ETC2,
+      TextureFormat::RG_EAC_UNorm,
+      TextureFormat::RG_EAC_SNorm,
+      TextureFormat::R_EAC_UNorm,
+      TextureFormat::R_EAC_SNorm,
 #endif
   };
 
@@ -374,5 +373,4 @@ TEST_F(TextureMTLTest, ConvertTextureFormats) {
   }
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

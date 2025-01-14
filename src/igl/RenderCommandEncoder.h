@@ -44,17 +44,22 @@ class IRenderCommandEncoder : public ICommandEncoder {
 
   // Binds the buffer to a shader
   //
-  // For metal, the index parameter is the buffer index specified in the shader, for opengl index
-  // refers to the location of uniform. The index value can be found by using
-  // igl::RenderPipelineState::getIndexByName
-  //
-  // target is the igl::BindTarget type
-  //
-  // bufferOffset is the offset into the buffer where the data starts
-  virtual void bindBuffer(int index,
-                          uint8_t target,
-                          const std::shared_ptr<IBuffer>& buffer,
-                          size_t bufferOffset) = 0;
+  // Vulkan: `index` is the buffer binding index specified in the shader.
+  // Metal: `index` is the buffer index specified in the shader.
+  // OpenGL: `index` refers to the location of a uniform. The `index` value can be found by using
+  // igl::RenderPipelineState::getIndexByName()
+  // `bufferOffset` is the offset into the buffer where the data starts
+  // `bufferSize` is the size of the buffer to bind used for additional validation (0 means the
+  // remaining size starting from `bufferOffset`)
+  virtual void bindBuffer(uint32_t index,
+                          IBuffer* buffer,
+                          size_t bufferOffset = 0,
+                          size_t bufferSize = 0) = 0;
+  // On Vulkan and OpenGL: bind a vertex buffer (as in "a buffer with vertices").
+  // On Metal: bind any buffer to the vertex stage. Apps should take care there are no 'index'
+  // collisions between bindVertexBuffer() and bindBuffer()
+  virtual void bindVertexBuffer(uint32_t index, IBuffer& buffer, size_t bufferOffset = 0) = 0;
+  virtual void bindIndexBuffer(IBuffer& buffer, IndexFormat format, size_t bufferOffset = 0) = 0;
   /// Creates and binds a temporary buffer to the specified buffer index.
   virtual void bindBytes(size_t index, uint8_t target, const void* data, size_t length) = 0;
   /// Binds push constant data to the current encoder.
@@ -65,45 +70,39 @@ class IRenderCommandEncoder : public ICommandEncoder {
   // by the "texture" attribute specified in the shader.
   // For OpenGL, 'index' is the texture unit
   virtual void bindTexture(size_t index, uint8_t target, ITexture* texture) = 0;
+  // This `bindTexture()` overload assumes `BindTarget::kFragment`
+  virtual void bindTexture(size_t index, ITexture* texture) = 0;
 
   /// Binds an individual uniform. Exclusively for use when uniform blocks are not supported.
   virtual void bindUniform(const UniformDesc& uniformDesc, const void* data) = 0;
 
-  virtual void draw(PrimitiveType primitiveType,
-                    size_t vertexStart,
-                    size_t vertexCount,
+  virtual void bindBindGroup(BindGroupTextureHandle handle) = 0;
+  // if any uniform/storage buffers are marked as dynamic, then `dynamicOffsets` should include one
+  // element for each `isDynamic` array element
+  virtual void bindBindGroup(BindGroupBufferHandle handle,
+                             uint32_t numDynamicOffsets = 0,
+                             const uint32_t* dynamicOffsets = nullptr) = 0;
+
+  virtual void draw(size_t vertexCount,
                     uint32_t instanceCount = 1,
+                    uint32_t firstVertex = 0,
                     uint32_t baseInstance = 0) = 0;
-  virtual void drawIndexed(PrimitiveType primitiveType,
-                           size_t indexCount,
-                           IndexFormat indexFormat,
-                           IBuffer& indexBuffer,
-                           size_t indexBufferOffset,
+  virtual void drawIndexed(size_t indexCount,
                            uint32_t instanceCount = 1,
-                           int32_t baseVertex = 0,
+                           uint32_t firstIndex = 0,
+                           int32_t vertexOffset = 0,
                            uint32_t baseInstance = 0) = 0;
-  // NOTE: indexBufferOffset parameter is supported in Metal but not OpenGL
-  virtual void drawIndexedIndirect(PrimitiveType primitiveType,
-                                   IndexFormat indexFormat,
-                                   IBuffer& indexBuffer,
-                                   IBuffer& indirectBuffer,
-                                   size_t indirectBufferOffset) = 0;
-  virtual void multiDrawIndirect(PrimitiveType primitiveType,
-                                 IBuffer& indirectBuffer,
-                                 size_t indirectBufferOffset,
-                                 uint32_t drawCount,
+  virtual void multiDrawIndirect(IBuffer& indirectBuffer,
+                                 size_t indirectBufferOffset = 0,
+                                 uint32_t drawCount = 1,
                                  uint32_t stride = 0) = 0;
-  virtual void multiDrawIndexedIndirect(PrimitiveType primitiveType,
-                                        IndexFormat indexFormat,
-                                        IBuffer& indexBuffer,
-                                        IBuffer& indirectBuffer,
-                                        size_t indirectBufferOffset,
-                                        uint32_t drawCount,
+  virtual void multiDrawIndexedIndirect(IBuffer& indirectBuffer,
+                                        size_t indirectBufferOffset = 0,
+                                        uint32_t drawCount = 1,
                                         uint32_t stride = 0) = 0;
 
   virtual void setStencilReferenceValue(uint32_t value) = 0;
-  virtual void setStencilReferenceValues(uint32_t frontValue, uint32_t backValue) = 0;
-  virtual void setBlendColor(Color color) = 0;
+  virtual void setBlendColor(const Color& color) = 0;
   virtual void setDepthBias(float depthBias, float slopeScale, float clamp) = 0;
 };
 

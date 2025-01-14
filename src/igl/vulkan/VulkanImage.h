@@ -12,18 +12,32 @@
 
 #include <igl/vulkan/Common.h>
 #include <igl/vulkan/VulkanHelpers.h>
+#include <igl/vulkan/VulkanImageView.h>
 
-namespace igl {
-namespace vulkan {
+struct AHardwareBuffer;
+
+namespace igl::vulkan {
 
 class VulkanContext;
-class VulkanImageView;
+
+struct VulkanImageCreateInfo {
+  VkImageUsageFlags usageFlags = 0;
+  bool isExternallyManaged = true;
+  VkExtent3D extent = VkExtent3D{0, 0, 0};
+  VkImageType type = VK_IMAGE_TYPE_MAX_ENUM;
+  VkFormat imageFormat = VK_FORMAT_UNDEFINED;
+  uint32_t mipLevels = 1;
+  uint32_t arrayLayers = 1;
+  VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+  bool isImported = false;
+};
 
 /**
  * @brief Encapsulates a Vulkan Image object (`VkImage`) along with some of its properties
  */
 class VulkanImage final {
  public:
+  explicit VulkanImage() = default;
   /**
    * @brief Constructs a `VulkanImage` object from a `VkImage` object. If a debug name is provided,
    * the constructor will assign it to the `VkImage` object. No other Vulkan functions are called
@@ -41,6 +55,16 @@ class VulkanImage final {
               uint32_t arrayLayers = 1,
               VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
               bool isImported = false);
+
+  /**
+   * @brief Constructs a `VulkanImage` object from a `VkImage` object. If a debug name is provided,
+   * the constructor will assign it to the `VkImage` object. No other Vulkan functions are called
+   */
+  VulkanImage(const VulkanContext& ctx,
+              VkDevice device,
+              VkImage image,
+              const VulkanImageCreateInfo& createInfo,
+              const char* debugName = nullptr);
 
   /**
    * @brief Constructs a `VulkanImage` object and a `VkImage` object. Except for the debug name, all
@@ -66,6 +90,45 @@ class VulkanImage final {
               VkImageCreateFlags createFlags,
               VkSampleCountFlagBits samples,
               const char* debugName = nullptr);
+
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+  /**
+   * @brief Constructs a `VulkanImage` object and a `VkImage` object from an `AHardwareBuffer`. The
+   * `VkImage` object is backed by external memory.
+   *
+   * This constructor does not support VMA.
+   *
+   * Except for the debug name, all other parameters are required. The debug name, if provided, is
+   * associated with the newly created `VkImage` object.
+   *
+   * The image must contain at least one mip-level, one array layer and one sample
+   * (`VK_SAMPLE_COUNT_1_BIT`). The format cannot be undefined (`VK_FORMAT_UNDEFINED`).
+   *
+   * If the image is host-visible (`memFlags` contains `VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT`), then
+   * it is memory mapped until the object's destruction.
+   *
+   * This constructor is only supported on Android environments.
+   *
+   * NOTE: Importing a hardware buffer causes Vulkan to acquire a reference to the hardware buffer,
+   * which it releases when the allocated memory is freed. Destroying a VulkanImage does not
+   * necessarily guarantee that the underlying hardware buffer is also freed, as the application may
+   * retain additional references to the hardware buffer.
+   */
+  VulkanImage(const VulkanContext& ctx,
+              AHardwareBuffer* ahb,
+              uint64_t memoryAllocationSize,
+              VkDevice device,
+              VkExtent3D extent,
+              VkImageType type,
+              VkFormat format,
+              uint32_t mipLevels,
+              uint32_t arrayLayers,
+              VkImageTiling tiling,
+              VkImageUsageFlags usageFlags,
+              VkImageCreateFlags createFlags,
+              VkSampleCountFlagBits samples,
+              const char* debugName = nullptr);
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
 
   /**
    * @brief Constructs a `VulkanImage` object and a `VkImage` object from a file descriptor. The
@@ -105,7 +168,7 @@ class VulkanImage final {
               VkSampleCountFlagBits samples,
               const char* debugName = nullptr);
 
-#if IGL_PLATFORM_WIN
+#if IGL_PLATFORM_WINDOWS
   /**
    * @brief Creates a `VulkanImage` with memory imported from a Windows handle.
    * NOTE:
@@ -127,36 +190,47 @@ class VulkanImage final {
               VkImageCreateFlags createFlags,
               VkSampleCountFlagBits samples,
               const char* debugName = nullptr);
-#endif // IGL_PLATFORM_WIN
+#endif // IGL_PLATFORM_WINDOWS
 
-#if IGL_PLATFORM_WIN || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
+#if IGL_PLATFORM_WINDOWS || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
   /**
    * @brief Creates a `VulkanImage` object whose memory can be exported externally.
    * On Windows, the exported `HANDLE` will be stored in `exportedMemoryHandle_`.
    * On Linux/Android, the exported file descriptor will be stored in `exportedFd_`.
    */
-  static std::shared_ptr<VulkanImage> createWithExportMemory(const VulkanContext& ctx,
-                                                             VkDevice device,
-                                                             VkExtent3D extent,
-                                                             VkImageType type,
-                                                             VkFormat format,
-                                                             uint32_t mipLevels,
-                                                             uint32_t arrayLayers,
-                                                             VkImageTiling tiling,
-                                                             VkImageUsageFlags usageFlags,
-                                                             VkImageCreateFlags createFlags,
-                                                             VkSampleCountFlagBits samples,
-                                                             const char* debugName = nullptr);
-#endif // IGL_PLATFORM_WIN || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
+  static VulkanImage createWithExportMemory(const VulkanContext& ctx,
+                                            VkDevice device,
+                                            VkExtent3D extent,
+                                            VkImageType type,
+                                            VkFormat format,
+                                            uint32_t mipLevels,
+                                            uint32_t arrayLayers,
+                                            VkImageTiling tiling,
+                                            VkImageUsageFlags usageFlags,
+                                            VkImageCreateFlags createFlags,
+                                            VkSampleCountFlagBits samples,
+                                            AHardwareBuffer* hwBuffer,
+                                            const char* debugName = nullptr);
+#endif // IGL_PLATFORM_WINDOWS || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
 
   ~VulkanImage();
 
   VulkanImage(const VulkanImage&) = delete;
   VulkanImage& operator=(const VulkanImage&) = delete;
 
+  VulkanImage(VulkanImage&& other) noexcept {
+    *this = std::move(other);
+  }
+  VulkanImage& operator=(VulkanImage&& other) noexcept;
+
   VkImage getVkImage() const {
     return vkImage_;
   }
+
+  /**
+   * @brief Returns true if the object is valid
+   */
+  bool valid() const;
 
   VkImageUsageFlags getVkImageUsageFlags() const {
     return usageFlags_;
@@ -176,16 +250,17 @@ class VulkanImage final {
    * Setting `numLevels` to a non-zero value will override `mipLevels_` value from the original
    * vulkan image, and can be used to create image views with different number of levels
    */
-  std::shared_ptr<VulkanImageView> createImageView(VkImageViewType type,
-                                                   VkFormat format,
-                                                   VkImageAspectFlags aspectMask,
-                                                   uint32_t baseLevel,
-                                                   uint32_t numLevels = VK_REMAINING_MIP_LEVELS,
-                                                   uint32_t baseLayer = 0,
-                                                   uint32_t numLayers = 1,
-                                                   const char* debugName = nullptr) const;
-
-  void generateMipmap(VkCommandBuffer commandBuffer) const;
+  VulkanImageView createImageView(VkImageViewType type,
+                                  VkFormat format,
+                                  VkImageAspectFlags aspectMask,
+                                  uint32_t baseLevel,
+                                  uint32_t numLevels = VK_REMAINING_MIP_LEVELS,
+                                  uint32_t baseLayer = 0,
+                                  uint32_t numLayers = 1,
+                                  const char* debugName = nullptr) const;
+  VulkanImageView createImageView(VulkanImageViewCreateInfo createInfo,
+                                  const char* debugName = nullptr) const;
+  void generateMipmap(VkCommandBuffer commandBuffer, const TextureRangeDesc& range) const;
 
   /**
    * @brief Transitions the `VkImage`'s layout from the current layout (stored in the object) to the
@@ -195,25 +270,42 @@ class VulkanImage final {
    * the `srcStageMask` and the `dstStageMask` parameters. Not not all `VkPipelineStageFlags` are
    * supported.
    */
-  void transitionLayout(VkCommandBuffer commandBuffer,
+  void transitionLayout(VkCommandBuffer cmdBuf,
                         VkImageLayout newImageLayout,
                         VkPipelineStageFlags srcStageMask,
                         VkPipelineStageFlags dstStageMask,
                         const VkImageSubresourceRange& subresourceRange) const;
+  void clearColorImage(VkCommandBuffer commandBuffer,
+                       const igl::Color& rgba,
+                       const VkImageSubresourceRange* subresourceRange = nullptr) const;
 
   VkImageAspectFlags getImageAspectFlags() const;
 
   static bool isDepthFormat(VkFormat format);
   static bool isStencilFormat(VkFormat format);
 
+  bool isMappedPtrAccessible() const {
+    return (mappedPtr_ != nullptr) && ((tiling_ & VK_IMAGE_TILING_LINEAR) != 0);
+  }
+
+  bool isCoherentMemory() const {
+    return isCoherentMemory_;
+  }
+
+  void flushMappedMemory() const;
+
  public:
-  const VulkanContext& ctx_;
+  // Vulkan as for v1.3.210 supports max 3 planes for multi-plane images.
+  static constexpr uint8_t kMaxImagePlanes = 3;
+
+  const VulkanContext* ctx_ = nullptr;
   VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
   VkDevice device_ = VK_NULL_HANDLE;
   VkImage vkImage_ = VK_NULL_HANDLE;
   VkImageUsageFlags usageFlags_ = 0;
-  VkDeviceMemory vkMemory_ = VK_NULL_HANDLE;
-  VmaAllocationCreateInfo vmaAllocInfo_ = {};
+  // Separate VkDeviceMemory objects to support disjoint multiplanar images
+  // @fb-only
+  VkDeviceMemory vkMemory_[kMaxImagePlanes] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
   VmaAllocation vmaAllocation_ = VK_NULL_HANDLE;
   VkFormatProperties formatProperties_{};
   void* mappedPtr_ = nullptr;
@@ -231,11 +323,18 @@ class VulkanImage final {
   mutable VkImageLayout imageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED; // current image layout
   bool isImported_ = false;
   bool isExported_ = false;
+  bool isCubemap_ = false;
   void* exportedMemoryHandle_ = nullptr; // windows handle
   int exportedFd_ = -1; // linux fd
+#if defined(IGL_DEBUG)
+  std::string name_;
+#endif
 
  private:
-#if IGL_PLATFORM_WIN || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
+  VkImageTiling tiling_ = VK_IMAGE_TILING_OPTIMAL;
+  bool isCoherentMemory_ = false;
+
+#if IGL_PLATFORM_WINDOWS || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
   /**
    * @brief Constructs a `VulkanImage` object and a `VkImage` object. Except for the debug name, all
    * other parameters are required. The debug name, if provided, is associated with the newly
@@ -266,9 +365,14 @@ class VulkanImage final {
               VkImageCreateFlags createFlags,
               VkSampleCountFlagBits samples,
               VkExternalMemoryHandleTypeFlags compatibleHandleTypes,
+              AHardwareBuffer* hwBuffer,
               const char* debugName);
-#endif // IGL_PLATFORM_WIN || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
+#endif // IGL_PLATFORM_WINDOWS || IGL_PLATFORM_LINUX || IGL_PLATFORM_ANDROID
+
+  // No-op in all builds except DEBUG
+  void setName(const std::string& name) noexcept;
+
+  void destroy();
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #include <IGLU/sentinel/Device.h>
 
 #include <IGLU/sentinel/Assert.h>
@@ -38,6 +40,11 @@ bool Device::getFeatureLimits(igl::DeviceFeatureLimits /*featureLimits*/,
 }
 
 igl::ShaderVersion Device::getShaderVersion() const {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
+  return {};
+}
+
+igl::BackendVersion Device::getBackendVersion() const {
   IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
   return {};
 }
@@ -149,6 +156,35 @@ std::unique_ptr<igl::IShaderStages> Device::createShaderStages(
     /*outResult*/) const {
   IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
   return nullptr;
+}
+
+igl::Holder<igl::BindGroupTextureHandle> Device::createBindGroup(
+    const igl::BindGroupTextureDesc& /*desc*/,
+    const igl::IRenderPipelineState* IGL_NULLABLE /*compatiblePipeline*/,
+    igl::Result* IGL_NULLABLE /*outResult*/) {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
+
+  return {};
+}
+
+igl::Holder<igl::BindGroupBufferHandle> Device::createBindGroup(
+    const igl::BindGroupBufferDesc& /*desc*/,
+    igl::Result* IGL_NULLABLE /*outResult*/) {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
+
+  return {};
+}
+
+void Device::destroy(igl::BindGroupTextureHandle /*handle*/) {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
+}
+
+void Device::destroy(igl::BindGroupBufferHandle /*handle*/) {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
+}
+
+void Device::destroy(igl::SamplerHandle /*handle*/) {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
 }
 
 } // namespace iglu::sentinel

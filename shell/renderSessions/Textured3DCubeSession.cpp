@@ -5,21 +5,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <IGLU/managedUniformBuffer/ManagedUniformBuffer.h>
 #include <igl/NameHandle.h>
 #include <igl/ShaderCreator.h>
 #include <igl/opengl/Device.h>
 #include <igl/opengl/GLIncludes.h>
 #include <igl/opengl/RenderCommandEncoder.h>
+#include <shell/shared/renderSession/ShellParams.h>
 #if defined(IGL_PLATFORM_UWP)
 #include "Textured3DCubeSession.h"
 #define M_PI 3.14159265358979323846
 #else
 #include <shell/renderSessions/Textured3DCubeSession.h>
+
+#include <cstddef>
 #endif
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 struct VertexPosUvw {
   glm::vec3 position;
@@ -50,7 +54,7 @@ static std::string getProlog(igl::IDevice& device) {
   }
 #endif // IGL_BACKEND_OPENGL
   return "";
-};
+}
 
 static std::string getMetalShaderSource() {
   return R"(
@@ -158,7 +162,7 @@ static const char* getVulkanVertexShaderSource() {
 static std::unique_ptr<IShaderStages> getShaderStagesForBackend(igl::IDevice& device) {
   switch (device.getBackendType()) {
   case igl::BackendType::Invalid:
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
     return nullptr;
   case igl::BackendType::Vulkan:
     return igl::ShaderStagesCreator::fromModuleStringInput(device,
@@ -204,10 +208,10 @@ void Textured3DCubeSession::createSamplerAndTextures(const igl::IDevice& device)
   samplerDesc.debugName = "Sampler: linear (MirrorRepeat)";
   samp0_ = device.createSamplerState(samplerDesc, nullptr);
 
-  uint32_t width = 256;
-  uint32_t height = 256;
-  uint32_t depth = 256;
-  uint32_t bytesPerPixel = 4;
+  const uint32_t width = 256;
+  const uint32_t height = 256;
+  const uint32_t depth = 256;
+  const uint32_t bytesPerPixel = 4;
   auto textureData = std::vector<uint8_t>((size_t)width * height * depth * bytesPerPixel);
   for (uint32_t k = 0; k < depth; ++k) {
     for (uint32_t j = 0; j < height; ++j) {
@@ -273,10 +277,11 @@ void Textured3DCubeSession::initialize() noexcept {
     return;
   }
   // Vertex buffer, Index buffer and Vertex Input
-  BufferDesc vb0Desc =
+  const BufferDesc vb0Desc =
       BufferDesc(BufferDesc::BufferTypeBits::Vertex, vertexData0, sizeof(vertexData0));
   vb0_ = device.createBuffer(vb0Desc, nullptr);
-  BufferDesc ibDesc = BufferDesc(BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData));
+  const BufferDesc ibDesc =
+      BufferDesc(BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData));
   ib0_ = device.createBuffer(ibDesc, nullptr);
 
   VertexInputStateDesc inputDesc;
@@ -299,7 +304,7 @@ void Textured3DCubeSession::initialize() noexcept {
   shaderStages_ = getShaderStagesForBackend(device);
 
   // Command queue: backed by different types of GPU HW queues
-  const CommandQueueDesc desc{igl::CommandQueueType::Graphics};
+  const CommandQueueDesc desc{};
   commandQueue_ = device.createCommandQueue(desc, nullptr);
 
   // Set up vertex uniform data
@@ -308,15 +313,15 @@ void Textured3DCubeSession::initialize() noexcept {
   renderPass_.colorAttachments.resize(1);
   renderPass_.colorAttachments[0].loadAction = LoadAction::Clear;
   renderPass_.colorAttachments[0].storeAction = StoreAction::Store;
-  renderPass_.colorAttachments[0].clearColor = getPlatform().getDevice().backendDebugColor();
+  renderPass_.colorAttachments[0].clearColor = getPreferredClearColor();
   renderPass_.depthAttachment.loadAction = LoadAction::Clear;
   renderPass_.depthAttachment.clearDepth = 1.0;
 }
 
 void Textured3DCubeSession::setVertexParams(float aspectRatio) {
   // perspective projection
-  float fov = 45.0f * (M_PI / 180.0f);
-  glm::mat4 projectionMat = glm::perspectiveLH(fov, aspectRatio, 0.1f, 100.0f);
+  const float fov = 45.0f * (M_PI / 180.0f);
+  const glm::mat4 projectionMat = glm::perspectiveLH(fov, aspectRatio, 0.1f, 100.0f);
   // rotating animation
   static float angle = 0.0f, scaleZ = 1.0f, ss = 0.005f;
   angle += 0.005f;
@@ -325,10 +330,11 @@ void Textured3DCubeSession::setVertexParams(float aspectRatio) {
   if (scaleZ <= 0.05f || scaleZ >= 1.0f) {
     ss *= -1.0f;
   }
-  glm::mat4 xform = projectionMat * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.f, 8.0f)) *
-                    glm::rotate(glm::mat4(1.0f), -0.2f, glm::vec3(1.0f, 0.0f, 0.0f)) *
-                    glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f)) *
-                    glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, scaleZ));
+  const glm::mat4 xform = projectionMat *
+                          glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.f, 8.0f)) *
+                          glm::rotate(glm::mat4(1.0f), -0.2f, glm::vec3(1.0f, 0.0f, 0.0f)) *
+                          glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f)) *
+                          glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, scaleZ));
 
   vertexParameters_.mvpMatrix = xform;
   vertexParameters_.scaleZ = scaleZ;
@@ -350,13 +356,13 @@ void Textured3DCubeSession::update(igl::SurfaceTextures surfaceTextures) noexcep
     framebufferDesc.depthAttachment.texture = surfaceTextures.depth;
 
     framebuffer_ = getPlatform().getDevice().createFramebuffer(framebufferDesc, &ret);
-    IGL_ASSERT(ret.isOk());
-    IGL_ASSERT(framebuffer_ != nullptr);
+    IGL_DEBUG_ASSERT(ret.isOk());
+    IGL_DEBUG_ASSERT(framebuffer_ != nullptr);
   } else {
     framebuffer_->updateDrawable(surfaceTextures.color);
   }
 
-  size_t textureUnit = 0;
+  const size_t textureUnit = 0;
   if (pipelineState_ == nullptr) {
     // Graphics pipeline: state batch that fully configures GPU for rendering
 
@@ -375,45 +381,38 @@ void Textured3DCubeSession::update(igl::SurfaceTextures surfaceTextures) noexcep
   }
 
   // Command buffers (1-N per thread): create, submit and forget
-  CommandBufferDesc cbDesc;
+  const CommandBufferDesc cbDesc;
   auto buffer = commandQueue_->createCommandBuffer(cbDesc, nullptr);
 
-  std::shared_ptr<igl::IRenderCommandEncoder> commands =
+  const std::shared_ptr<igl::IRenderCommandEncoder> commands =
       buffer->createRenderCommandEncoder(renderPass_, framebuffer_);
 
-  commands->bindBuffer(0, BindTarget::kVertex, vb0_, 0);
+  commands->bindVertexBuffer(0, *vb0_);
 
-#if defined(IGL_UWP_VS_FIX)
-  igl::UniformDesc e1;
-  e1.name = "mvpMatrix";
-  e1.type = igl::UniformType::Mat4x4;
-  e1.offset = offsetof(VertexFormat, mvpMatrix);
-
-  igl::UniformDesc e2;
-  e2.name = "scaleZ";
-  e2.type = igl::UniformType::Float;
-  e2.offset = offsetof(VertexFormat, scaleZ);
-
-  iglu::ManagedUniformBufferInfo info;
-  info.index = 1;
-  info.length = sizeof(VertexFormat);
-  info.uniforms.push_back(e1);
-  info.uniforms.push_back(e2);
-
-#else // to preserve a beauty of new C++ standard!
   // Bind Vertex Uniform Data
   iglu::ManagedUniformBufferInfo info;
   info.index = 1;
   info.length = sizeof(VertexFormat);
-  info.uniforms = std::vector<igl::UniformDesc>{
-      igl::UniformDesc{
-          "mvpMatrix", -1, igl::UniformType::Mat4x4, 1, offsetof(VertexFormat, mvpMatrix), 0},
-      igl::UniformDesc{
-          "scaleZ", -1, igl::UniformType::Float, 1, offsetof(VertexFormat, scaleZ), 0}};
-#endif
-  std::shared_ptr<iglu::ManagedUniformBuffer> vertUniformBuffer =
+  info.uniforms = std::vector<igl::UniformDesc>{igl::UniformDesc{
+                                                    "mvpMatrix",
+                                                    -1,
+                                                    igl::UniformType::Mat4x4,
+                                                    1,
+                                                    offsetof(VertexFormat, mvpMatrix),
+                                                    0,
+                                                },
+                                                igl::UniformDesc{
+                                                    "scaleZ",
+                                                    -1,
+                                                    igl::UniformType::Float,
+                                                    1,
+                                                    offsetof(VertexFormat, scaleZ),
+                                                    0,
+                                                }};
+
+  const std::shared_ptr<iglu::ManagedUniformBuffer> vertUniformBuffer =
       std::make_shared<iglu::ManagedUniformBuffer>(device, info);
-  IGL_ASSERT(vertUniformBuffer->result.isOk());
+  IGL_DEBUG_ASSERT(vertUniformBuffer->result.isOk());
   *static_cast<VertexFormat*>(vertUniformBuffer->getData()) = vertexParameters_;
   vertUniformBuffer->bind(device, *pipelineState_, *commands);
 
@@ -422,14 +421,16 @@ void Textured3DCubeSession::update(igl::SurfaceTextures surfaceTextures) noexcep
 
   commands->bindRenderPipelineState(pipelineState_);
 
-  commands->drawIndexed(PrimitiveType::Triangle, 3 * 6 * 2, IndexFormat::UInt16, *ib0_, 0);
+  commands->bindIndexBuffer(*ib0_, IndexFormat::UInt16);
+  commands->drawIndexed(static_cast<size_t>(3u * 6u * 2u));
 
   commands->endEncoding();
 
-  buffer->present(framebuffer_->getColorAttachment(0));
+  if (shellParams().shouldPresent) {
+    buffer->present(framebuffer_->getColorAttachment(0));
+  }
 
   commandQueue_->submit(*buffer); // Guarantees ordering between command buffers
 }
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

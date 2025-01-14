@@ -25,9 +25,9 @@ PlatformDevice::PlatformDevice(Device& owner) : opengl::PlatformDevice(owner) {}
 std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDrawable(Result* outResult) {
   Size requiredSize;
   NSView* view = [[NSOpenGLContext currentContext] view];
-  if (IGL_VERIFY(view)) {
-    NSRect bounds = view.bounds;
-    NSSize sizeInPixels = [view convertSizeToBacking:bounds.size];
+  if (IGL_DEBUG_VERIFY(view)) {
+    const NSRect bounds = view.bounds;
+    const NSSize sizeInPixels = [view convertSizeToBacking:bounds.size];
     requiredSize =
         Size(static_cast<float>(sizeInPixels.width), static_cast<float>(sizeInPixels.height));
   } else {
@@ -36,16 +36,16 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDrawable(Result
   }
 
   if (!drawableTexture_ || drawableTexture_->getSize() != requiredSize) {
-    TextureDesc desc = {
-        (size_t)requiredSize.width,
-        (size_t)requiredSize.height,
+    const TextureDesc desc = {
+        static_cast<uint32_t>(requiredSize.width),
+        static_cast<uint32_t>(requiredSize.height),
         1,
         1,
         1,
         TextureDesc::TextureUsageBits::Attachment,
         1,
         TextureType::TwoD,
-        TextureFormat::RGBA_SRGB,
+        drawableTextureFormat_,
     };
     auto texture = std::make_shared<ViewTextureTarget>(getContext(), desc.format);
     texture->create(desc, true);
@@ -62,8 +62,8 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDrawable(Result
 std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDepth(Result* outResult) {
   NSSize sizeInPixels;
   NSView* view = [[NSOpenGLContext currentContext] view];
-  if (IGL_VERIFY(view)) {
-    NSRect bounds = view.bounds;
+  if (IGL_DEBUG_VERIFY(view)) {
+    const NSRect bounds = view.bounds;
     sizeInPixels = [view convertSizeToBacking:bounds.size];
   } else {
     Result::setResult(outResult, Result::Code::RuntimeError);
@@ -72,7 +72,7 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDepth(Result* o
 
   GLint depthBits;
   NSOpenGLPixelFormat* pixelFormat = [[NSOpenGLContext currentContext] pixelFormat];
-  if (IGL_VERIFY(pixelFormat)) {
+  if (IGL_DEBUG_VERIFY(pixelFormat)) {
     [pixelFormat getValues:&depthBits forAttribute:NSOpenGLPFADepthSize forVirtualScreen:0];
   } else {
     Result::setResult(outResult, Result::Code::RuntimeError);
@@ -100,9 +100,9 @@ std::shared_ptr<ITexture> PlatformDevice::createTextureFromNativeDepth(Result* o
     return nullptr;
   }
 
-  TextureDesc desc = {
-      static_cast<size_t>(sizeInPixels.width),
-      static_cast<size_t>(sizeInPixels.height),
+  const TextureDesc desc = {
+      static_cast<uint32_t>(sizeInPixels.width),
+      static_cast<uint32_t>(sizeInPixels.height),
       1,
       1,
       1,
@@ -149,11 +149,17 @@ std::unique_ptr<ITexture> PlatformDevice::createTextureFromNativePixelBuffer(
 TextureFormat PlatformDevice::getNativeDrawableTextureFormat(Result* outResult) {
   Result::setOk(outResult);
 
-  return TextureFormat::RGBA_UNorm8;
+  return drawableTextureFormat_;
+}
+
+void PlatformDevice::setNativeDrawableTextureFormat(TextureFormat format, Result* outResult) {
+  Result::setOk(outResult);
+
+  drawableTextureFormat_ = format;
 }
 
 bool PlatformDevice::isType(PlatformDeviceType t) const noexcept {
   return t == Type || opengl::PlatformDevice::isType(t);
 }
 
-} // namespace igl::opengl::ios
+} // namespace igl::opengl::macos

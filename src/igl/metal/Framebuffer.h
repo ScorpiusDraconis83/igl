@@ -13,9 +13,6 @@
 
 namespace igl {
 
-class ICommandQueue;
-class ITexture;
-
 namespace metal {
 
 class Framebuffer : public IFramebuffer {
@@ -24,12 +21,12 @@ class Framebuffer : public IFramebuffer {
   ~Framebuffer() override = default;
 
   // Accessors
-  std::vector<size_t> getColorAttachmentIndices() const override;
-  std::shared_ptr<ITexture> getColorAttachment(size_t index) const override;
-  std::shared_ptr<ITexture> getResolveColorAttachment(size_t index) const override;
-  std::shared_ptr<ITexture> getDepthAttachment() const override;
-  std::shared_ptr<ITexture> getResolveDepthAttachment() const override;
-  std::shared_ptr<ITexture> getStencilAttachment() const override;
+  [[nodiscard]] std::vector<size_t> getColorAttachmentIndices() const override;
+  [[nodiscard]] std::shared_ptr<ITexture> getColorAttachment(size_t index) const override;
+  [[nodiscard]] std::shared_ptr<ITexture> getResolveColorAttachment(size_t index) const override;
+  [[nodiscard]] std::shared_ptr<ITexture> getDepthAttachment() const override;
+  [[nodiscard]] std::shared_ptr<ITexture> getResolveDepthAttachment() const override;
+  [[nodiscard]] std::shared_ptr<ITexture> getStencilAttachment() const override;
   [[nodiscard]] FramebufferMode getMode() const override;
   [[nodiscard]] bool isSwapchainBound() const override;
 
@@ -57,6 +54,7 @@ class Framebuffer : public IFramebuffer {
 
   void updateDrawable(std::shared_ptr<ITexture> texture) override;
   void updateDrawable(SurfaceTextures surfaceTextures) override;
+  void updateResolveAttachment(std::shared_ptr<ITexture> texture) override;
 
   IGL_INLINE const FramebufferDesc& get() const {
     return value_;

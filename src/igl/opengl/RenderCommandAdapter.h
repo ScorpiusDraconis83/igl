@@ -36,8 +36,8 @@ class RenderCommandAdapter final : public WithContext {
 
  private:
   struct BufferState {
-    std::shared_ptr<Buffer> resource;
-    size_t offset;
+    Buffer* resource = nullptr;
+    size_t offset = 0;
   };
 
   using TextureState = std::pair<ITexture*, ISamplerState*>;
@@ -55,23 +55,19 @@ class RenderCommandAdapter final : public WithContext {
   void setScissorRect(const ScissorRect& rect);
 
   void setDepthStencilState(const std::shared_ptr<IDepthStencilState>& newValue);
-  void setStencilReferenceValue(uint32_t value, Result* outResult = nullptr);
-  void setStencilReferenceValues(uint32_t frontValue,
-                                 uint32_t backValue,
-                                 Result* outResult = nullptr);
-  void setBlendColor(Color color);
-  void setDepthBias(float depthBias, float slopeScale);
+  void setStencilReferenceValue(uint32_t value);
+  void setBlendColor(const Color& color);
+  void setDepthBias(float depthBias, float slopeScale, float clamp);
 
   void clearVertexBuffers();
-  void setVertexBuffer(std::shared_ptr<Buffer> buffer,
-                       size_t offset,
-                       int index,
-                       Result* outResult = nullptr);
+  void setVertexBuffer(Buffer& buffer, size_t offset, size_t index, Result* outResult = nullptr);
+  void setIndexBuffer(Buffer& buffer);
 
   void clearUniformBuffers();
-  void setUniformBuffer(const std::shared_ptr<Buffer>& buffer,
+  void setUniformBuffer(Buffer* buffer,
                         size_t offset,
-                        int index,
+                        size_t size,
+                        uint32_t index,
                         Result* outResult = nullptr);
   void setUniform(const UniformDesc& uniformDesc, const void* data, Result* outResult = nullptr);
 
@@ -91,14 +87,16 @@ class RenderCommandAdapter final : public WithContext {
                         Result* outResult = nullptr);
 
   void drawArrays(GLenum mode, GLint first, GLsizei count);
-  void drawElements(GLenum mode,
-                    GLsizei indexCount,
-                    GLenum indexType,
-                    Buffer& indexBuffer,
-                    const GLvoid* indexOffset);
+  void drawArraysIndirect(GLenum mode, Buffer& indirectBuffer, const GLvoid* indirectBufferOffset);
+  void drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+  void drawElements(GLenum mode, GLsizei indexCount, GLenum indexType, const GLvoid* indexOffset);
+  void drawElementsInstanced(GLenum mode,
+                             GLsizei indexCount,
+                             GLenum indexType,
+                             const GLvoid* indexOffset,
+                             GLsizei instancecount);
   void drawElementsIndirect(GLenum mode,
                             GLenum indexType,
-                            Buffer& indexBuffer,
                             Buffer& indirectBuffer,
                             const GLvoid* indirectBufferOffset);
 
@@ -108,15 +106,19 @@ class RenderCommandAdapter final : public WithContext {
                   const std::shared_ptr<IFramebuffer>& framebuffer,
                   Result* outResult);
 
+  [[nodiscard]] const igl::IRenderPipelineState& pipelineState() const {
+    IGL_DEBUG_ASSERT(pipelineState_, "No rendering pipeline is bound");
+    return *pipelineState_;
+  }
+
  private:
-  RenderCommandAdapter(IContext& context);
+  explicit RenderCommandAdapter(IContext& context);
 
   void clearDependentResources(const std::shared_ptr<IRenderPipelineState>& newValue,
                                Result* outResult = nullptr);
   void willDraw();
   void didDraw();
   void unbindVertexAttributes();
-  void unbindResources();
 
   void bindBufferWithShaderStorageBufferOverride(Buffer& buffer,
                                                  GLenum overrideTargetForShaderStorageBuffer);
@@ -126,7 +128,7 @@ class RenderCommandAdapter final : public WithContext {
                              TextureStates& states,
                              std::bitset<IGL_TEXTURE_SAMPLERS_MAX>& dirtyFlags);
 
-  bool isDirty(StateMask mask) const {
+  [[nodiscard]] bool isDirty(StateMask mask) const {
     return (dirtyStateBits_ & EnumToValue(mask)) != 0;
   }
   void setDirty(StateMask mask) {
@@ -138,11 +140,11 @@ class RenderCommandAdapter final : public WithContext {
 
   // @brief OpenGL ES doesn't support glPolygonMode. To support rendering wireframe with it
   // we change all triangle drawing modes to GL_LINE_STRIP
-  GLenum toMockWireframeMode(GLenum mode) const;
+  [[nodiscard]] GLenum toMockWireframeMode(GLenum mode) const;
 
  private:
-  std::array<BufferState, IGL_VERTEX_BUFFER_MAX> vertexBuffers_;
-  std::bitset<IGL_VERTEX_BUFFER_MAX> vertexBuffersDirty_;
+  std::array<BufferState, IGL_BUFFER_BINDINGS_MAX> vertexBuffers_;
+  std::bitset<IGL_BUFFER_BINDINGS_MAX> vertexBuffersDirty_;
   std::bitset<IGL_TEXTURE_SAMPLERS_MAX> vertexTextureStatesDirty_;
   std::bitset<IGL_TEXTURE_SAMPLERS_MAX> fragmentTextureStatesDirty_;
   TextureStates vertexTextureStates_;
@@ -152,6 +154,8 @@ class RenderCommandAdapter final : public WithContext {
   std::shared_ptr<IRenderPipelineState> pipelineState_;
   std::shared_ptr<IDepthStencilState> depthStencilState_;
   std::shared_ptr<VertexArrayObject> activeVAO_ = nullptr;
+  uint32_t frontStencilReferenceValue_ = 0xFF;
+  uint32_t backStencilReferenceValue_ = 0xFF;
 
   UnbindPolicy cachedUnbindPolicy_;
   bool useVAO_ = false;

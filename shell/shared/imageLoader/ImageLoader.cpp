@@ -36,6 +36,14 @@ constexpr std::array<uint32_t, 64> kCheckerboard = {
     kBlack, kBlack, kWhite, kWhite, kWhite, kWhite, kBlack, kBlack, kWhite, kWhite, kBlack,
     kBlack, kWhite, kWhite, kBlack, kBlack, kWhite, kWhite, kBlack, kBlack,
 };
+constexpr std::array<uint32_t, 64> kWhiteTexture = {
+    kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite,
+    kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite,
+    kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite,
+    kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite,
+    kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite,
+    kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite, kWhite,
+};
 constexpr uint32_t kNumBytes = kWidth * kHeight * 4u;
 
 class CheckerboardData : public iglu::textureloader::IData {
@@ -51,40 +59,62 @@ const uint8_t* IGL_NONNULL CheckerboardData::data() const noexcept {
 uint32_t CheckerboardData::length() const noexcept {
   return kNumBytes;
 }
+
+class WhiteData : public iglu::textureloader::IData {
+ public:
+  [[nodiscard]] const uint8_t* IGL_NONNULL data() const noexcept final;
+  [[nodiscard]] uint32_t length() const noexcept final;
+};
+
+const uint8_t* IGL_NONNULL WhiteData::data() const noexcept {
+  return reinterpret_cast<const uint8_t*>(kWhiteTexture.data());
+}
+
+uint32_t WhiteData::length() const noexcept {
+  return kNumBytes;
+}
 } // namespace
 
 ImageLoader::ImageLoader(FileLoader& fileLoader) :
   fileLoader_(fileLoader),
   factory_(std::make_unique<iglu::textureloader::TextureLoaderFactory>(createLoaderFactories())) {}
 
-ImageData ImageLoader::defaultLoadImageData(const std::string& imageName) noexcept {
-  std::string fullName = fileLoader().fullPath(imageName);
+ImageData ImageLoader::defaultLoadImageData(
+    const std::string& imageName,
+    std::optional<igl::TextureFormat> preferredFormat) noexcept {
+  const std::string fullName = fileLoader().fullPath(imageName);
 
-  return loadImageDataFromFile(fullName);
+  return loadImageDataFromFile(fullName, preferredFormat);
 }
 
-ImageData ImageLoader::loadImageDataFromFile(const std::string& fileName) noexcept {
+ImageData ImageLoader::loadImageDataFromFile(
+    const std::string& fileName,
+    std::optional<igl::TextureFormat> preferredFormat) noexcept {
   auto [data, length] = fileLoader_.loadBinaryData(fileName);
-  if (IGL_VERIFY(data && length > 0)) {
-    return loadImageDataFromMemory(data.get(), length);
+  if (IGL_DEBUG_VERIFY(data && length > 0)) {
+    return loadImageDataFromMemory(data.get(), length, preferredFormat);
   }
 
   return {};
 }
 
-ImageData ImageLoader::loadImageDataFromMemory(const uint8_t* data, uint32_t length) noexcept {
-  if (IGL_UNEXPECTED(data == nullptr)) {
+ImageData ImageLoader::loadImageDataFromMemory(
+    const uint8_t* data,
+    uint32_t length,
+    std::optional<igl::TextureFormat> preferredFormat) noexcept {
+  if (IGL_DEBUG_VERIFY_NOT(data == nullptr)) {
     return {};
   }
 
   Result result;
-  auto loader = factory_->tryCreate(data, length, &result);
-  if (IGL_UNEXPECTED(loader == nullptr || !result.isOk())) {
+  auto loader = preferredFormat ? factory_->tryCreate(data, length, *preferredFormat, &result)
+                                : factory_->tryCreate(data, length, &result);
+  if (loader == nullptr || !result.isOk()) {
     return {};
   }
 
   auto texData = loader->load(&result);
-  if (IGL_UNEXPECTED(texData == nullptr || !result.isOk())) {
+  if (texData == nullptr || !result.isOk()) {
     return {};
   }
 
@@ -103,6 +133,16 @@ ImageData ImageLoader::checkerboard() noexcept {
                                       kHeight,
                                       TextureDesc::TextureUsageBits::Sampled,
                                       "Checkerboard");
+  imageData.desc.numMipLevels = TextureDesc::calcNumMipLevels(kWidth, kHeight);
+
+  return imageData;
+}
+
+ImageData ImageLoader::white() noexcept {
+  ImageData imageData;
+  imageData.data = std::make_unique<WhiteData>();
+  imageData.desc = TextureDesc::new2D(
+      TextureFormat::RGBA_UNorm8, kWidth, kHeight, TextureDesc::TextureUsageBits::Sampled, "White");
   imageData.desc.numMipLevels = TextureDesc::calcNumMipLevels(kWidth, kHeight);
 
   return imageData;

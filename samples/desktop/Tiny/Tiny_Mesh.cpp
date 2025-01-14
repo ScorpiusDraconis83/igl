@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <GLFW/glfw3.h>
 #include <cassert>
 #if !defined(_USE_MATH_DEFINES)
@@ -245,7 +247,6 @@ static void initIGL() {
   {
     const igl::vulkan::VulkanContextConfig cfg = {
         .terminateOnValidationError = true,
-        .swapChainColorSpace = igl::ColorSpace::SRGB_LINEAR,
     };
 #ifdef _WIN32
     auto ctx = vulkan::HWDevice::createContext(cfg, (void*)glfwGetWin32Window(window_));
@@ -266,7 +267,7 @@ static void initIGL() {
     }
     device_ =
         vulkan::HWDevice::create(std::move(ctx), devices[0], (uint32_t)width_, (uint32_t)height_);
-    IGL_ASSERT(device_);
+    IGL_DEBUG_ASSERT(device_);
   }
 
   // Vertex buffer, Index buffer and Vertex Input. Buffers are allocated in GPU memory.
@@ -368,8 +369,8 @@ static void initIGL() {
         &texHeight,
         &channels,
         4);
-    IGL_ASSERT_MSG(pixels,
-                   "Cannot load textures. Run `deploy_content.py` before running this app.");
+    IGL_DEBUG_ASSERT(pixels,
+                     "Cannot load textures. Run `deploy_content.py` before running this app.");
     const TextureDesc desc = TextureDesc::new2D(igl::TextureFormat::RGBA_UNorm8,
                                                 texWidth,
                                                 texHeight,
@@ -388,7 +389,7 @@ static void initIGL() {
   }
 
   // Command queue: backed by different types of GPU HW queues
-  CommandQueueDesc desc{CommandQueueType::Graphics};
+  CommandQueueDesc desc{};
   commandQueue_ = device_->createCommandQueue(desc, nullptr);
 
   renderPass_.colorAttachments.push_back(igl::RenderPassDesc::ColorAttachmentDesc{});
@@ -415,7 +416,7 @@ static void createRenderPipeline() {
     return;
   }
 
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 
   RenderPipelineDesc desc;
 
@@ -443,25 +444,25 @@ static void createRenderPipeline() {
 static std::shared_ptr<ITexture> getVulkanNativeDrawable() {
   const auto& vkPlatformDevice = device_->getPlatformDevice<igl::vulkan::PlatformDevice>();
 
-  IGL_ASSERT(vkPlatformDevice != nullptr);
+  IGL_DEBUG_ASSERT(vkPlatformDevice != nullptr);
 
   Result ret;
   std::shared_ptr<ITexture> drawable = vkPlatformDevice->createTextureFromNativeDrawable(&ret);
 
-  IGL_ASSERT(ret.isOk());
+  IGL_DEBUG_ASSERT(ret.isOk());
   return drawable;
 }
 
 static std::shared_ptr<ITexture> getVulkanNativeDepth() {
   const auto& vkPlatformDevice = device_->getPlatformDevice<igl::vulkan::PlatformDevice>();
 
-  IGL_ASSERT(vkPlatformDevice != nullptr);
+  IGL_DEBUG_ASSERT(vkPlatformDevice != nullptr);
 
   Result ret;
   std::shared_ptr<ITexture> drawable =
       vkPlatformDevice->createTextureFromNativeDepth(width_, height_, &ret);
 
-  IGL_ASSERT(ret.isOk());
+  IGL_DEBUG_ASSERT(ret.isOk());
   return drawable;
 }
 
@@ -473,7 +474,7 @@ static void createFramebuffer(const std::shared_ptr<ITexture>& nativeDrawable) {
 #endif // TINY_TEST_USE_DEPTH_BUFFER
 
   framebuffer_ = device_->createFramebuffer(framebufferDesc_, nullptr);
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 }
 
 static void render(const std::shared_ptr<ITexture>& nativeDrawable, uint32_t frameIndex) {
@@ -536,21 +537,22 @@ static void render(const std::shared_ptr<ITexture>& nativeDrawable, uint32_t fra
   commands->bindViewport(viewport);
   commands->bindScissorRect(scissor);
   commands->pushDebugGroupLabel("Render Mesh", igl::Color(1, 0, 0));
-  commands->bindBuffer(0, BindTarget::kVertex, vb0_, 0);
+  commands->bindVertexBuffer(0, *vb0_);
   commands->bindDepthStencilState(depthStencilState_);
-  commands->bindBuffer(0, BindTarget::kAllGraphics, ubPerFrame_[frameIndex], 0);
+  commands->bindBuffer(0, ubPerFrame_[frameIndex].get());
   commands->bindTexture(0, igl::BindTarget::kFragment, texture0_.get());
   commands->bindTexture(1, igl::BindTarget::kFragment, texture1_.get());
   commands->bindSamplerState(0, igl::BindTarget::kFragment, sampler_.get());
   commands->bindSamplerState(1, igl::BindTarget::kFragment, sampler_.get());
   // Draw 2 cubes: we use uniform buffer to update matrices
+  commands->bindIndexBuffer(*ib0_, IndexFormat::UInt16);
   for (uint32_t i = 0; i != kNumCubes; i++) {
-    commands->bindBuffer(
-        1, BindTarget::kAllGraphics, ubPerObject_[frameIndex], i * sizeof(UniformsPerObject));
-    commands->drawIndexed(PrimitiveType::Triangle, 3 * 6 * 2, IndexFormat::UInt16, *ib0_.get(), 0);
+    commands->bindBuffer(1, ubPerObject_[frameIndex].get(), i * sizeof(UniformsPerObject));
+    commands->drawIndexed(3u * 6u * 2u);
   }
   commands->popDebugGroupLabel();
 #if IGL_WITH_IGLU
+  imguiSession_->drawFPS(fps_.getAverageFPS());
   imguiSession_->endFrame(*device_.get(), *commands);
 #endif // IGL_WITH_IGLU
   commands->endEncoding();

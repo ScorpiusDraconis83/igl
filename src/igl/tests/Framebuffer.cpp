@@ -13,16 +13,17 @@
 
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
+#if IGL_BACKEND_OPENGL
 #include <igl/opengl/IContext.h>
 #include <igl/opengl/PlatformDevice.h>
+#endif // #IGL_BACKEND_OPENGL
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 // Use a 1x1 Framebuffer for this test
-#define OFFSCREEN_RT_WIDTH 1
-#define OFFSCREEN_RT_HEIGHT 1
+constexpr size_t OFFSCREEN_RT_WIDTH = 1;
+constexpr size_t OFFSCREEN_RT_HEIGHT = 1;
 
 //
 // FramebufferTest
@@ -55,11 +56,11 @@ class FramebufferTest : public ::testing::Test {
     ASSERT_TRUE(cmdQueue_ != nullptr);
 
     // Create an offscreen texture to render to
-    TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                             OFFSCREEN_RT_WIDTH,
-                                             OFFSCREEN_RT_HEIGHT,
-                                             TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
+    const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                   OFFSCREEN_RT_WIDTH,
+                                                   OFFSCREEN_RT_HEIGHT,
+                                                   TextureDesc::TextureUsageBits::Sampled |
+                                                       TextureDesc::TextureUsageBits::Attachment);
 
     auto depthFormat = TextureFormat::S8_UInt_Z32_UNorm;
 
@@ -76,7 +77,7 @@ class FramebufferTest : public ::testing::Test {
 
     Result ret;
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(offscreenTexture_ != nullptr);
 
     depthStencilTexture_ = iglDev_->createTexture(depthTexDesc, &ret);
@@ -92,7 +93,7 @@ class FramebufferTest : public ::testing::Test {
     framebufferDesc.stencilAttachment.texture = depthStencilTexture_;
 
     framebuffer_ = iglDev_->createFramebuffer(framebufferDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(framebuffer_ != nullptr);
 
     // Initialize render pass descriptor
@@ -135,7 +136,7 @@ class FramebufferTest : public ::testing::Test {
     inputDesc.numAttributes = inputDesc.numInputBindings = 2;
 
     vertexInputState_ = iglDev_->createVertexInputState(inputDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vertexInputState_ != nullptr);
 
     // Initialize index buffer
@@ -146,7 +147,7 @@ class FramebufferTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_IND);
 
     ib_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(ib_ != nullptr);
 
     // Initialize vertex and sampler buffers
@@ -155,7 +156,7 @@ class FramebufferTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_VERT);
 
     vb_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(vb_ != nullptr);
 
     bufDesc.type = BufferDesc::BufferTypeBits::Vertex;
@@ -163,11 +164,11 @@ class FramebufferTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_UV);
 
     uv_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(uv_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
@@ -233,18 +234,18 @@ TEST_F(FramebufferTest, Clear) {
   // Create Pipeline
   //----------------
   pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(pipelineState != nullptr);
 
   depthStencilState = iglDev_->createDepthStencilState(desc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(depthStencilState != nullptr);
 
   //---------------------------------
   // Clear FB to {0.5, 0.5, 0.5, 0.5}
   //---------------------------------
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   renderPass_.colorAttachments[0].clearColor = {0.501f, 0.501f, 0.501f, 0.501f};
@@ -269,29 +270,31 @@ TEST_F(FramebufferTest, Clear) {
   framebuffer_->copyBytesColorAttachment(*cmdQueue_, 0, pixels.data(), rangeDesc);
   ASSERT_EQ(pixels[0], 0x80808080);
 
-  // TODO: copyBytesDepthAttachment is not functioning property under Metal
+#if IGL_BACKEND_OPENGL
+  // TODO: copyBytesDepthAttachment is not functioning property under Metal/Vulkan
   // due to unimplemented blitting
   // Refer to igl/metal/Framebuffer.mm
   framebuffer_->copyBytesDepthAttachment(*cmdQueue_, pixels_depth.data(), rangeDesc);
   // ASSERT_EQ(pixels_depth[0], 0x80808080);
 
-  // TODO: copyBytesStencilAttachment is not functioning property under Metal
+  // TODO: copyBytesStencilAttachment is not functioning property under Metal/Vulkan
   // due to unimplemented blitting
   // Refer to igl/metal/Framebuffer.mm
   framebuffer_->copyBytesStencilAttachment(*cmdQueue_, pixels_stencil.data(), rangeDesc);
   // ASSERT_EQ(pixels_stencil[0], 0x80808080);
+#endif
 
   //-------------------------------------------------------------------------
   // Clear FB to {0, 0, 0, 0}, but this time bind a pipelineState, disable
   // the colorWriteMasks, and do a no-op draw
   //-------------------------------------------------------------------------
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   renderPipelineDesc_.targetDesc.colorAttachments[0].colorWriteMask = ColorWriteBitsDisabled;
   pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(pipelineState != nullptr);
 
   renderPass_.colorAttachments[0].clearColor = {0, 0, 0, 0};
@@ -302,9 +305,10 @@ TEST_F(FramebufferTest, Clear) {
   cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
   cmds->bindRenderPipelineState(pipelineState);
   cmds->bindDepthStencilState(depthStencilState);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
-  cmds->drawIndexed(PrimitiveType::Triangle, 0, IndexFormat::UInt16, *ib_, 0); // draw 0 indices
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(0); // draw 0 indices
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -319,24 +323,26 @@ TEST_F(FramebufferTest, Clear) {
   framebuffer_->copyBytesColorAttachment(*cmdQueue_, 0, pixels.data(), rangeDesc);
   ASSERT_EQ(pixels[0], 0);
 
-  // TODO: copyBytesDepthAttachment is not functioning property under Metal
+#if IGL_BACKEND_OPENGL
+  // TODO: copyBytesDepthAttachment is not functioning property under Metal/Vulkan
   // due to unimplemented blitting
   // Refer to igl/metal/Framebuffer.mm
   framebuffer_->copyBytesDepthAttachment(*cmdQueue_, pixels_depth.data(), rangeDesc);
   // ASSERT_EQ(pixels_depth[0], 0);
 
-  // TODO: copyBytesStencilAttachment is not functioning property under Metal
+  // TODO: copyBytesStencilAttachment is not functioning property under Metal/Vulkan
   // due to unimplemented blitting
   // Refer to igl/metal/Framebuffer.mm
   framebuffer_->copyBytesStencilAttachment(*cmdQueue_, pixels_stencil.data(), rangeDesc);
   // ASSERT_EQ(pixels_stencil[0], 0);
+#endif
 
   //-------------------------------------------------------------------------
   // Clear FB to {0.5, 0.5, 0.5, 0.5} again. We should not be impacted by the
   // colorWriteMask setting from the render pass above
   //-------------------------------------------------------------------------
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   renderPass_.colorAttachments[0].clearColor = {0.501f, 0.501f, 0.501f, 0.501f};
@@ -365,8 +371,9 @@ TEST_F(FramebufferTest, Clear) {
 // the device's getPlatformDevice() function, which should return nullptr
 // on Metal
 //
+#if IGL_BACKEND_OPENGL
 TEST_F(FramebufferTest, blitFramebufferColor) {
-  auto* platformDevice = iglDev_.get()->getPlatformDevice<opengl::PlatformDevice>();
+  auto* platformDevice = iglDev_->getPlatformDevice<opengl::PlatformDevice>();
   if (platformDevice) {
     ASSERT_TRUE(backend_ == util::BACKEND_OGL);
 
@@ -391,14 +398,14 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
     //-----------------------------------------
     // Create an offscreen texture to render to
     //-----------------------------------------
-    TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                             OFFSCREEN_RT_WIDTH,
-                                             OFFSCREEN_RT_HEIGHT,
-                                             TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
+    const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                   OFFSCREEN_RT_WIDTH,
+                                                   OFFSCREEN_RT_HEIGHT,
+                                                   TextureDesc::TextureUsageBits::Sampled |
+                                                       TextureDesc::TextureUsageBits::Attachment);
 
-    std::shared_ptr<ITexture> offscreenTexture2 = iglDev_->createTexture(texDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    const std::shared_ptr<ITexture> offscreenTexture2 = iglDev_->createTexture(texDesc, &ret);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(offscreenTexture2 != nullptr);
 
     //-------------------------------------------------------------
@@ -407,8 +414,9 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
     FramebufferDesc framebufferDesc;
 
     framebufferDesc.colorAttachments[0].texture = offscreenTexture2;
-    std::shared_ptr<IFramebuffer> framebuffer2 = iglDev_->createFramebuffer(framebufferDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    const std::shared_ptr<IFramebuffer> framebuffer2 =
+        iglDev_->createFramebuffer(framebufferDesc, &ret);
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(framebuffer2 != nullptr);
 
     //---------------------------------
@@ -417,7 +425,7 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
     const auto rangeDesc = TextureRangeDesc::new2D(0, 0, OFFSCREEN_RT_WIDTH, OFFSCREEN_RT_HEIGHT);
 
     cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(cmdBuf_ != nullptr);
 
     renderPass_.colorAttachments[0].clearColor = {0.501f, 0.501f, 0.501f, 0.501f};
@@ -441,7 +449,7 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
     // Clear FB2 to {0, 0, 0, 0}
     //-------------------------------------------------------------------------
     cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_TRUE(cmdBuf_ != nullptr);
 
     renderPass_.colorAttachments[0].clearColor = {0, 0, 0, 0};
@@ -461,7 +469,6 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
     framebuffer2->copyBytesColorAttachment(*cmdQueue_, 0, pixels2.data(), rangeDesc);
     ASSERT_EQ(pixels2[0], 0);
 
-#if IGL_BACKEND_OPENGL
     if (platformDevice->getContext().deviceFeatures().hasInternalFeature(
             opengl::InternalFeatures::FramebufferBlit)) {
       //--------------------------------------------------------------
@@ -479,7 +486,7 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
                                       OFFSCREEN_RT_WIDTH,
                                       GL_COLOR_BUFFER_BIT,
                                       &ret);
-      ASSERT_TRUE(ret.isOk());
+      ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
 
       //-------------------------------------------------------------
       // Read back framebuffer_ & framebuffer2, and examine if equal.
@@ -490,11 +497,11 @@ TEST_F(FramebufferTest, blitFramebufferColor) {
       ASSERT_EQ(pixels[0], pixels2[0]);
       ASSERT_EQ(pixels2[0], 0x80808080);
     }
-#endif // IGL_BACKEND_OPENGL
   } else {
     ASSERT_TRUE(backend_ != util::BACKEND_OGL);
   }
 }
+#endif // IGL_BACKEND_OPENGL
 
 //
 // Framebuffer Drawable Unbind Test
@@ -551,15 +558,15 @@ TEST_F(FramebufferTest, DrawableBindCount) {
   ASSERT_EQ(numOfAttachments, 1);
 
   // Create another texture
-  TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                           OFFSCREEN_RT_WIDTH,
-                                           OFFSCREEN_RT_HEIGHT,
-                                           TextureDesc::TextureUsageBits::Sampled |
-                                               TextureDesc::TextureUsageBits::Attachment);
+  const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                 OFFSCREEN_RT_WIDTH,
+                                                 OFFSCREEN_RT_HEIGHT,
+                                                 TextureDesc::TextureUsageBits::Sampled |
+                                                     TextureDesc::TextureUsageBits::Attachment);
 
   Result ret;
   auto newTex = iglDev_->createTexture(texDesc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(newTex != nullptr);
 
   // Updating one texture for another, numAttachment should not change
@@ -628,5 +635,84 @@ TEST_F(FramebufferTest, UpdateDrawableWithDepthAndStencilTest) {
   ASSERT_EQ(framebuffer_->getStencilAttachment(), stencilAttachment);
 }
 
-} // namespace tests
-} // namespace igl
+TEST_F(FramebufferTest, GetColorAttachmentTest) {
+  const bool backendOpenGL = iglDev_->getBackendType() == igl::BackendType::OpenGL;
+
+  if (backendOpenGL) {
+#if IGL_BACKEND_OPENGL
+    if (!iglDev_->getPlatformDevice<igl::opengl::PlatformDevice>()
+             ->getContext()
+             .deviceFeatures()
+             .hasInternalFeature(opengl::InternalFeatures::PackRowLength)) {
+      GTEST_SKIP() << "Framebuffer PackRowLength is not supported";
+    }
+#endif
+  }
+
+  // Create a texture to be used as color attachment
+  const int textureWidth = 3;
+  const int textureHeight = 2;
+  const int channelCount = 4;
+  const int channelSize = sizeof(uint8_t);
+  const int textureElementPerRow = textureWidth * channelCount;
+  const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                 textureWidth,
+                                                 textureHeight,
+                                                 TextureDesc::TextureUsageBits::Sampled |
+                                                     TextureDesc::TextureUsageBits::Attachment);
+
+  Result ret;
+  auto outputTexture = iglDev_->createTexture(texDesc, &ret);
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+  ASSERT_TRUE(outputTexture != nullptr);
+
+  // Create framebuffer using the texture
+  FramebufferDesc framebufferDesc;
+  framebufferDesc.colorAttachments[0].texture = outputTexture;
+  framebuffer_ = iglDev_->createFramebuffer(framebufferDesc, &ret);
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+  ASSERT_TRUE(framebuffer_ != nullptr);
+
+  //----------------
+  // Create Pipeline
+  //----------------
+  cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
+  ASSERT_TRUE(cmdBuf_ != nullptr);
+
+  renderPass_.colorAttachments[0].clearColor = {0.501f, 0.501f, 0.501f, 0.501f};
+
+  auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
+  cmds->endEncoding();
+
+  cmdQueue_->submit(*cmdBuf_);
+
+  cmdBuf_->waitUntilCompleted();
+
+  //----------------------
+  // Read back framebuffer
+  //----------------------
+  const int outputImageWidth = textureWidth + 2;
+  const int outputImageHeight = textureHeight;
+  const int outputElementPerRow = outputImageWidth * channelCount;
+  auto pixels = std::vector<uint8_t>(static_cast<size_t>(outputElementPerRow * textureHeight), 0);
+
+  const auto rangeDesc = igl::TextureRangeDesc::new2D(0, 0, textureWidth, textureHeight);
+  framebuffer_->copyBytesColorAttachment(*cmdQueue_,
+                                         0,
+                                         pixels.data(),
+                                         rangeDesc,
+                                         static_cast<size_t>(outputElementPerRow * channelSize));
+
+  for (int i = 0; i < outputImageHeight; i++) {
+    for (int j = 0; j < outputElementPerRow; j++) {
+      if (j < textureElementPerRow) {
+        EXPECT_EQ(pixels[i * outputElementPerRow + j], 128);
+      } else {
+        EXPECT_EQ(pixels[i * outputElementPerRow + j], 0);
+      }
+    }
+  }
+}
+
+} // namespace igl::tests

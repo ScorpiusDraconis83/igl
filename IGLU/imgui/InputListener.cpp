@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #include "InputListener.h"
 
 // ImGui has a very awkward expectation when it comes to processing inputs and making decisions
@@ -19,8 +21,7 @@
 // is one frame old. This can be a source of problems if we have multiple input listeners and
 // depending on how they process inputs.
 
-namespace iglu {
-namespace imgui {
+namespace iglu::imgui {
 
 InputListener::InputListener(ImGuiContext* context) {
   _context = context;
@@ -65,5 +66,4 @@ void InputListener::makeCurrentContext() const {
   ImGui::SetCurrentContext(_context);
 }
 
-} // namespace imgui
-} // namespace iglu
+} // namespace iglu::imgui

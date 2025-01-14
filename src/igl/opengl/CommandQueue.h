@@ -9,10 +9,8 @@
 
 #include <igl/CommandQueue.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 class IContext;
-class Device;
 
 class CommandQueue final : public ICommandQueue {
  public:
@@ -20,12 +18,11 @@ class CommandQueue final : public ICommandQueue {
                                                       Result* outResult) override;
   SubmitHandle submit(const ICommandBuffer& commandBuffer, bool endOfFrame = false) override;
 
-  void setInitialContext(std::shared_ptr<IContext> context);
+  void setInitialContext(const std::shared_ptr<IContext>& context);
 
  private:
   std::shared_ptr<IContext> context_;
   uint32_t activeCommandBuffers_ = 0;
 };
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

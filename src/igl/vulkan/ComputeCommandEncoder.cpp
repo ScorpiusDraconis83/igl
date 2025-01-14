@@ -10,22 +10,22 @@
 #include <igl/vulkan/Buffer.h>
 #include <igl/vulkan/ComputePipelineState.h>
 #include <igl/vulkan/Texture.h>
+#include <igl/vulkan/VulkanBuffer.h>
 #include <igl/vulkan/VulkanContext.h>
 #include <igl/vulkan/VulkanImage.h>
-#include <igl/vulkan/VulkanPipelineLayout.h>
 #include <igl/vulkan/VulkanTexture.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 ComputeCommandEncoder::ComputeCommandEncoder(const std::shared_ptr<CommandBuffer>& commandBuffer,
                                              VulkanContext& ctx) :
   ctx_(ctx),
   cmdBuffer_(commandBuffer ? commandBuffer->getVkCommandBuffer() : VK_NULL_HANDLE),
-  binder_(commandBuffer, ctx_, VK_PIPELINE_BIND_POINT_COMPUTE) {
+  binder_(commandBuffer.get(), ctx_, VK_PIPELINE_BIND_POINT_COMPUTE) {
   IGL_PROFILER_FUNCTION();
 
-  IGL_ASSERT(commandBuffer);
+  IGL_DEBUG_ASSERT(commandBuffer);
+  IGL_ENSURE_VULKAN_CONTEXT_THREAD(&ctx_);
 
   ctx_.checkAndUpdateDescriptorSets();
 
@@ -35,6 +35,8 @@ ComputeCommandEncoder::ComputeCommandEncoder(const std::shared_ptr<CommandBuffer
 void ComputeCommandEncoder::endEncoding() {
   IGL_PROFILER_FUNCTION();
 
+  IGL_ENSURE_VULKAN_CONTEXT_THREAD(&ctx_);
+
   if (!isEncoding_) {
     return;
   }
@@ -42,13 +44,19 @@ void ComputeCommandEncoder::endEncoding() {
   isEncoding_ = false;
 
   for (const auto* img : restoreLayout_) {
-    img->transitionLayout(
-        cmdBuffer_,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VkImageSubresourceRange{
-            img->getImageAspectFlags(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS});
+    if (img->isSampledImage()) {
+      // only sampled images can be transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+      img->transitionLayout(cmdBuffer_,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VkImageSubresourceRange{img->getImageAspectFlags(),
+                                                    0,
+                                                    VK_REMAINING_MIP_LEVELS,
+                                                    0,
+                                                    VK_REMAINING_ARRAY_LAYERS});
+    }
   }
   restoreLayout_.clear();
 }
@@ -57,7 +65,7 @@ void ComputeCommandEncoder::bindComputePipelineState(
     const std::shared_ptr<IComputePipelineState>& pipelineState) {
   IGL_PROFILER_FUNCTION();
 
-  if (!IGL_VERIFY(pipelineState)) {
+  if (!IGL_DEBUG_VERIFY(pipelineState)) {
     return;
   }
 
@@ -82,11 +90,59 @@ void ComputeCommandEncoder::bindComputePipelineState(
   }
 }
 
+void ComputeCommandEncoder::processDependencies(const Dependencies& dependencies) {
+  // 1. Process all textures
+  {
+    const Dependencies* deps = &dependencies;
+
+    while (deps) {
+      for (ITexture* tex : deps->textures) {
+        if (!tex) {
+          break;
+        }
+        igl::vulkan::transitionToGeneral(cmdBuffer_, tex);
+      }
+      deps = deps->next;
+    }
+  }
+
+  // 2. Process all buffers
+  {
+    const Dependencies* deps = &dependencies;
+
+    while (deps) {
+      for (IBuffer* buf : deps->buffers) {
+        if (!buf) {
+          break;
+        }
+        const auto* vkBuf = static_cast<igl::vulkan::Buffer*>(buf);
+        ivkBufferBarrier(&ctx_.vf_,
+                         cmdBuffer_,
+                         vkBuf->getVkBuffer(),
+                         vkBuf->getBufferUsageFlags(),
+                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+      }
+      deps = deps->next;
+    }
+  }
+}
+
 void ComputeCommandEncoder::dispatchThreadGroups(const Dimensions& threadgroupCount,
-                                                 const Dimensions& /*threadgroupSize*/) {
+                                                 const Dimensions& /*threadgroupSize*/,
+                                                 const Dependencies& dependencies) {
   IGL_PROFILER_FUNCTION();
 
-  IGL_ASSERT_MSG(cps_, "Did you forget to call bindComputePipelineState()?");
+  IGL_ENSURE_VULKAN_CONTEXT_THREAD(&ctx_);
+
+  if (!cps_) {
+    IGL_DEBUG_ABORT("Did you forget to call bindComputePipelineState()?");
+    return;
+  }
+
+  processDependencies(dependencies);
 
   binder_.updateBindings(cps_->getVkPipelineLayout(), *cps_);
   // threadgroupSize is controlled inside compute shaders
@@ -95,13 +151,13 @@ void ComputeCommandEncoder::dispatchThreadGroups(const Dimensions& threadgroupCo
 }
 
 void ComputeCommandEncoder::pushDebugGroupLabel(const char* label, const igl::Color& color) const {
-  IGL_ASSERT(label != nullptr && *label);
+  IGL_DEBUG_ASSERT(label != nullptr && *label);
   ivkCmdBeginDebugUtilsLabel(&ctx_.vf_, cmdBuffer_, label, color.toFloatPtr());
 }
 
 void ComputeCommandEncoder::insertDebugEventLabel(const char* label,
                                                   const igl::Color& color) const {
-  IGL_ASSERT(label != nullptr && *label);
+  IGL_DEBUG_ASSERT(label != nullptr && *label);
   ivkCmdInsertDebugUtilsLabel(&ctx_.vf_, cmdBuffer_, label, color.toFloatPtr());
 }
 
@@ -112,79 +168,66 @@ void ComputeCommandEncoder::popDebugGroupLabel() const {
 void ComputeCommandEncoder::bindUniform(const UniformDesc& /*uniformDesc*/, const void* /*data*/) {
   // DO NOT IMPLEMENT!
   // This is only for backends that MUST use single uniforms in some situations.
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
-void ComputeCommandEncoder::bindTexture(size_t index, ITexture* texture) {
+void ComputeCommandEncoder::bindTexture(uint32_t index, ITexture* texture) {
   IGL_PROFILER_FUNCTION();
 
-  IGL_ASSERT(texture);
+  IGL_DEBUG_ASSERT(texture);
+
   const igl::vulkan::Texture* tex = static_cast<igl::vulkan::Texture*>(texture);
   const igl::vulkan::VulkanTexture& vkTex = tex->getVulkanTexture();
-  const igl::vulkan::VulkanImage* vkImage = &vkTex.getVulkanImage();
-  if (!vkImage->isStorageImage()) {
-    IGL_ASSERT_MSG(false, "Did you forget to specify TextureUsageBits::Storage on your texture?");
-    return;
-  }
+  const igl::vulkan::VulkanImage* vkImage = &vkTex.image_;
 
-  // "frame graph" heuristics: if we are already in VK_IMAGE_LAYOUT_GENERAL, wait for the previous
-  // compute shader, otherwise wait for previous attachment writes
-  const VkPipelineStageFlags srcStage =
-      (vkImage->imageLayout_ == VK_IMAGE_LAYOUT_GENERAL) ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-      : vkImage->isDepthOrStencilFormat_                 ? VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-                                         : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  vkImage->transitionLayout(cmdBuffer_,
-                            VK_IMAGE_LAYOUT_GENERAL,
-                            srcStage,
-                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                            VkImageSubresourceRange{vkImage->getImageAspectFlags(),
-                                                    0,
-                                                    VK_REMAINING_MIP_LEVELS,
-                                                    0,
-                                                    VK_REMAINING_ARRAY_LAYERS});
+  igl::vulkan::transitionToGeneral(cmdBuffer_, texture);
 
   restoreLayout_.push_back(vkImage);
 
   binder_.bindTexture(index, static_cast<igl::vulkan::Texture*>(texture));
 }
 
-void ComputeCommandEncoder::bindBuffer(size_t index,
-                                       const std::shared_ptr<IBuffer>& buffer,
-                                       size_t offset) {
+void ComputeCommandEncoder::bindBuffer(uint32_t index,
+                                       IBuffer* buffer,
+                                       size_t offset,
+                                       size_t bufferSize) {
   IGL_PROFILER_FUNCTION();
 
-  if (!IGL_VERIFY(buffer != nullptr)) {
+  if (!IGL_DEBUG_VERIFY(buffer != nullptr)) {
     return;
   }
 
-  auto* buf = static_cast<igl::vulkan::Buffer*>(buffer.get());
+  auto* buf = static_cast<igl::vulkan::Buffer*>(buffer);
 
-  const bool isStorageBuffer = (buf->getBufferType() & BufferDesc::BufferTypeBits::Storage) != 0;
+  const bool isUniformBuffer = (buf->getBufferType() & BufferDesc::BufferTypeBits::Uniform) > 0;
+  const bool isStorageBuffer = (buf->getBufferType() & BufferDesc::BufferTypeBits::Storage) > 0;
+  const bool isUniformOrStorageBuffer = isUniformBuffer || isStorageBuffer;
 
-  if (!isStorageBuffer) {
-    IGL_ASSERT_MSG(
-        false,
-        "Did you forget to specify igl::BufferDesc::BufferTypeBits::Storage on your buffer?");
+  if (!IGL_DEBUG_VERIFY(isUniformOrStorageBuffer,
+                        "Did you forget to specify igl::BufferDesc::BufferTypeBits::Storage or "
+                        "BufferDesc::BufferTypeBits::Uniform on your buffer?")) {
     return;
   }
 
-  binder_.bindStorageBuffer((int)index, buf, offset);
+  binder_.bindBuffer(index, buf, offset, bufferSize);
 }
 
 void ComputeCommandEncoder::bindBytes(size_t /*index*/, const void* /*data*/, size_t /*length*/) {
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
 void ComputeCommandEncoder::bindPushConstants(const void* data, size_t length, size_t offset) {
   IGL_PROFILER_FUNCTION();
 
-  IGL_ASSERT(length % 4 == 0); // VUID-vkCmdPushConstants-size-00369: size must be a multiple of 4
+  IGL_DEBUG_ASSERT(length % 4 == 0); // VUID-vkCmdPushConstants-size-00369: size must be a multiple
+                                     // of 4
 
-  IGL_ASSERT_MSG(cps_, "Did you forget to call bindComputePipelineState()?");
-  IGL_ASSERT_MSG(cps_->pushConstantRange_.size,
-                 "Currently bound compute pipeline state has no push constants");
-  IGL_ASSERT_MSG(offset + length <= cps_->pushConstantRange_.offset + cps_->pushConstantRange_.size,
-                 "Push constants size exceeded");
+  IGL_DEBUG_ASSERT(cps_, "Did you forget to call bindComputePipelineState()?");
+  IGL_DEBUG_ASSERT(cps_->pushConstantRange_.size,
+                   "Currently bound compute pipeline state has no push constants");
+  IGL_DEBUG_ASSERT(offset + length <=
+                       cps_->pushConstantRange_.offset + cps_->pushConstantRange_.size,
+                   "Push constants size exceeded");
 
 #if IGL_VULKAN_PRINT_COMMANDS
   IGL_LOG_INFO("%p vkCmdPushConstants(%u) - COMPUTE\n", cmdBuffer_, length);
@@ -197,5 +240,4 @@ void ComputeCommandEncoder::bindPushConstants(const void* data, size_t length, s
                               data);
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

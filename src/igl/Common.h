@@ -13,15 +13,14 @@
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
+#include <igl/Color.h>
 #include <igl/Core.h>
 #include <limits>
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
-
-#define IGL_NULLABLE FOLLY_NULLABLE
-#define IGL_NONNULL FOLLY_NONNULL
+#include <vector>
 
 namespace igl {
 
@@ -31,8 +30,12 @@ using Deleter = void (*)(void* IGL_NULLABLE);
 /// Device Capabilities or Metal Features
 constexpr uint32_t IGL_TEXTURE_SAMPLERS_MAX = 16;
 constexpr uint32_t IGL_VERTEX_ATTRIBUTES_MAX = 24;
-constexpr uint32_t IGL_VERTEX_BUFFER_MAX = 128;
-constexpr uint32_t IGL_VERTEX_BINDINGS_MAX = 24;
+
+// maximum number of buffers that can be bound to a shader stage
+// See maximum number of entries in the buffer argument table, per graphics or kernel function
+// in https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
+constexpr uint32_t IGL_BUFFER_BINDINGS_MAX = 31;
+
 constexpr uint32_t IGL_UNIFORM_BLOCKS_BINDING_MAX = 16;
 
 // See GL_MAX_COLOR_ATTACHMENTS in
@@ -59,18 +62,12 @@ enum class CullMode : uint8_t { Disabled, Front, Back };
 enum class WindingMode : uint8_t { Clockwise, CounterClockwise };
 enum class NormalizedZRange : uint8_t { NegOneToOne, ZeroToOne };
 
-struct Color {
-  float r;
-  float g;
-  float b;
-  float a;
-
-  Color(float r, float g, float b) : r(r), g(g), b(b), a(1.0f) {}
-  Color(float r, float g, float b, float a) : r(r), g(g), b(b), a(a) {}
-
-  const float* IGL_NONNULL toFloatPtr() const {
-    return &r;
-  }
+enum class PrimitiveType : uint8_t {
+  Point,
+  Line,
+  LineStrip,
+  Triangle,
+  TriangleStrip,
 };
 
 struct Result {
@@ -102,7 +99,7 @@ struct Result {
     code(code), message(message) {}
   explicit Result(Code code, std::string message) : code(code), message(std::move(message)) {}
 
-  bool isOk() const {
+  [[nodiscard]] bool isOk() const {
     return code == Result::Code::Ok;
   }
 
@@ -142,6 +139,16 @@ enum class BackendType {
   Vulkan,
   // @fb-only
 };
+
+enum class BackendFlavor : uint8_t {
+  Invalid,
+  OpenGL,
+  OpenGL_ES,
+  Metal,
+  Vulkan,
+  // @fb-only
+};
+
 std::string BackendTypeToString(BackendType backendType);
 
 ///--------------------------------------
@@ -161,7 +168,7 @@ struct Rect {
   T width{}; // zero-initialize
   T height{}; // zero-initialize
 
-  bool isNull() const {
+  [[nodiscard]] bool isNull() const {
     return kNullValue == x && kNullValue == y;
   }
 };
@@ -181,14 +188,10 @@ struct Size {
 
 struct Dimensions {
   Dimensions() = default;
-  Dimensions(size_t w, size_t h, size_t d) {
-    width = w;
-    height = h;
-    depth = d;
-  }
-  size_t width;
-  size_t height;
-  size_t depth;
+  Dimensions(uint32_t w, uint32_t h, uint32_t d) : width(w), height(h), depth(d) {}
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t depth = 0;
 };
 
 inline bool operator==(const Dimensions& lhs, const Dimensions& rhs) {
@@ -218,12 +221,16 @@ struct Viewport {
   float height = 1.0f;
   float minDepth = 0.0f;
   float maxDepth = 1.0f;
-
-  bool operator!=(const Viewport other) const {
-    return x != other.x || y != other.y || width != other.width || height != other.height ||
-           minDepth != other.minDepth || maxDepth != other.maxDepth;
-  }
 };
+
+inline bool operator==(const Viewport& lhs, const Viewport& rhs) {
+  return lhs.x == rhs.x && lhs.y == rhs.y && lhs.width == rhs.width && lhs.height == rhs.height &&
+         lhs.minDepth == rhs.minDepth && lhs.maxDepth == rhs.maxDepth;
+}
+
+inline bool operator!=(const Viewport& lhs, const Viewport& rhs) {
+  return !operator==(lhs, rhs);
+}
 
 const Viewport kInvalidViewport = {-1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f};
 
@@ -271,10 +278,245 @@ ScopeGuard<T> operator+(ScopeGuardOnExit, T&& fn) {
 ///--------------------------------------
 /// MARK: - optimizedMemcpy
 
-// Optimized version of memcpy that allows to copy smallest unforms in most efficient way
-// Other sizes utilize a libc memcpy implementation
-// It's not a universal function and expects to have a proper alignment for data!
+// Optimized version of memcpy() that allows to copy smallest uniforms in the most efficient way.
+// Other sizes utilize a libc memcpy() implementation. It's not a universal function and expects to
+// have a proper alignment for data!
 void optimizedMemcpy(void* IGL_NULLABLE dst, const void* IGL_NULLABLE src, size_t size);
+
+///--------------------------------------
+/// MARK: - Handle
+
+// Non-ref counted handles; based on:
+// https://enginearchitecture.realtimerendering.com/downloads/reac2023_modern_mobile_rendering_at_hypehype.pdf
+// https://github.com/corporateshark/lightweightvk/blob/main/lvk/LVK.h
+template<typename ObjectType>
+class Handle final {
+ public:
+  Handle() noexcept = default;
+
+  [[nodiscard]] bool empty() const noexcept {
+    return gen_ == 0;
+  }
+  [[nodiscard]] bool valid() const noexcept {
+    return gen_ != 0;
+  }
+  [[nodiscard]] uint32_t index() const noexcept {
+    return index_;
+  }
+  [[nodiscard]] uint32_t gen() const noexcept {
+    return gen_;
+  }
+  [[nodiscard]] void* IGL_NULLABLE indexAsVoid() const noexcept {
+    return reinterpret_cast<void*>(static_cast<ptrdiff_t>(index_));
+  }
+  bool operator==(const Handle<ObjectType>& other) const noexcept {
+    return index_ == other.index_ && gen_ == other.gen_;
+  }
+  bool operator!=(const Handle<ObjectType>& other) const noexcept {
+    return index_ != other.index_ || gen_ != other.gen_;
+  }
+  // allow conditions 'if (handle)'
+  explicit operator bool() const noexcept {
+    return gen_ != 0;
+  }
+
+ private:
+  Handle(uint32_t index, uint32_t gen) noexcept : index_(index), gen_(gen) {}
+
+  template<typename ObjectType_, typename ImplObjectType>
+  friend class Pool;
+
+  uint32_t index_ = 0; // the index of this handle within a Pool
+  uint32_t gen_ = 0; // the generation of this handle to prevent the ABA Problem
+};
+
+static_assert(sizeof(Handle<class Foo>) == sizeof(uint64_t));
+
+// specialized with dummy structs for type safety
+using BindGroupTextureHandle = igl::Handle<struct BindGroupTextureTag>;
+using BindGroupBufferHandle = igl::Handle<struct BindGroupBufferTag>;
+using TextureHandle = igl::Handle<struct TextureTag>;
+using SamplerHandle = igl::Handle<struct SamplerTag>;
+using DepthStencilStateHandle = igl::Handle<struct DepthStencilStateTag>;
+
+class IDevice;
+
+// forward declarations to access incomplete type IDevice
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::BindGroupTextureHandle handle);
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::BindGroupBufferHandle handle);
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::TextureHandle handle);
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::SamplerHandle handle);
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::DepthStencilStateHandle handle);
+
+///--------------------------------------
+/// MARK: - Holder
+
+// RAII wrapper around Handle<>; based on:
+// https://github.com/corporateshark/lightweightvk/blob/main/lvk/LVK.h
+template<typename HandleType>
+class Holder final {
+ public:
+  Holder() noexcept = default;
+  Holder(igl::IDevice* IGL_NULLABLE device, HandleType handle) noexcept :
+    device_(device), handle_(handle) {}
+  ~Holder() {
+    igl::destroy(device_, handle_);
+  }
+  Holder(const Holder&) = delete;
+  Holder(Holder&& other) noexcept : device_(other.device_), handle_(other.handle_) {
+    other.device_ = nullptr;
+    other.handle_ = HandleType{};
+  }
+  Holder& operator=(const Holder&) = delete;
+  Holder& operator=(Holder&& other) noexcept {
+    std::swap(device_, other.device_);
+    std::swap(handle_, other.handle_);
+    return *this;
+  }
+  Holder& operator=(std::nullptr_t) {
+    this->reset();
+    return *this;
+  }
+
+  [[nodiscard]] operator HandleType() const noexcept {
+    return handle_;
+  }
+
+  [[nodiscard]] bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  [[nodiscard]] bool empty() const noexcept {
+    return handle_.empty();
+  }
+
+  void reset() {
+    igl::destroy(device_, handle_);
+    device_ = nullptr;
+    handle_ = HandleType{};
+  }
+
+  [[nodiscard]] HandleType release() noexcept {
+    device_ = nullptr;
+    return std::exchange(handle_, HandleType{});
+  }
+
+  [[nodiscard]] uint32_t gen() const noexcept {
+    return handle_.gen();
+  }
+  [[nodiscard]] uint32_t index() const noexcept {
+    return handle_.index();
+  }
+  [[nodiscard]] void* IGL_NULLABLE indexAsVoid() const noexcept {
+    return handle_.indexAsVoid();
+  }
+
+ private:
+  igl::IDevice* IGL_NULLABLE device_ = nullptr;
+  HandleType handle_ = {};
+};
+
+///--------------------------------------
+/// MARK: - Pool
+
+// A Pool of objects which is compatible with the abovementioned Handle<> types; based on:
+// https://enginearchitecture.realtimerendering.com/downloads/reac2023_modern_mobile_rendering_at_hypehype.pdf
+// https://github.com/corporateshark/lightweightvk/blob/main/lvk/Pool.h
+template<typename ObjectType, typename ImplObjectType>
+class Pool {
+  static constexpr uint32_t kListEndSentinel = 0xffffffff;
+  struct PoolEntry {
+    explicit PoolEntry(ImplObjectType& obj) noexcept : obj_(std::move(obj)) {}
+    ImplObjectType obj_ = {};
+    uint32_t gen_ = 1;
+    uint32_t nextFree_ = kListEndSentinel;
+  };
+  uint32_t freeListHead_ = kListEndSentinel;
+  uint32_t numObjects_ = 0;
+
+ public:
+  std::vector<PoolEntry> objects_;
+
+  [[nodiscard]] Handle<ObjectType> create(ImplObjectType&& obj) {
+    uint32_t idx = 0;
+    if (freeListHead_ != kListEndSentinel) {
+      idx = freeListHead_;
+      freeListHead_ = objects_[idx].nextFree_;
+      objects_[idx].obj_ = std::move(obj);
+    } else {
+      idx = (uint32_t)objects_.size();
+      objects_.emplace_back(obj);
+    }
+    numObjects_++;
+    return Handle<ObjectType>(idx, objects_[idx].gen_);
+  }
+  void destroy(Handle<ObjectType> handle) noexcept {
+    if (handle.empty()) {
+      return;
+    }
+    IGL_DEBUG_ASSERT(numObjects_ > 0, "Double deletion");
+    const uint32_t index = handle.index();
+    IGL_DEBUG_ASSERT(index < objects_.size());
+    IGL_DEBUG_ASSERT(handle.gen() == objects_[index].gen_, "Double deletion");
+    objects_[index].obj_ = ImplObjectType{};
+    objects_[index].gen_++;
+    objects_[index].nextFree_ = freeListHead_;
+    freeListHead_ = index;
+    numObjects_--;
+  }
+  // this is a helper function to simplify migration to handles (should be deprecated after the
+  // migration is completed)
+  void destroy(uint32_t index) noexcept {
+    IGL_DEBUG_ASSERT(numObjects_ > 0, "Double deletion");
+    IGL_DEBUG_ASSERT(index < objects_.size());
+    objects_[index].obj_ = ImplObjectType{};
+    objects_[index].gen_++;
+    objects_[index].nextFree_ = freeListHead_;
+    freeListHead_ = index;
+    numObjects_--;
+  }
+  [[nodiscard]] const ImplObjectType* IGL_NULLABLE get(Handle<ObjectType> handle) const noexcept {
+    if (handle.empty()) {
+      return nullptr;
+    }
+
+    const uint32_t index = handle.index();
+    IGL_DEBUG_ASSERT(index < objects_.size());
+    IGL_DEBUG_ASSERT(handle.gen() == objects_[index].gen_, "Accessing a deleted object");
+    return &objects_[index].obj_;
+  }
+  [[nodiscard]] ImplObjectType* IGL_NULLABLE get(Handle<ObjectType> handle) noexcept {
+    if (handle.empty()) {
+      return nullptr;
+    }
+
+    const uint32_t index = handle.index();
+    IGL_DEBUG_ASSERT(index < objects_.size());
+    IGL_DEBUG_ASSERT(handle.gen() == objects_[index].gen_, "Accessing a deleted object");
+    return &objects_[index].obj_;
+  }
+  [[nodiscard]] Handle<ObjectType> findObject(const ImplObjectType* IGL_NULLABLE obj) noexcept {
+    if (!obj) {
+      return {};
+    }
+
+    for (size_t idx = 0; idx != objects_.size(); idx++) {
+      if (objects_[idx].obj_ == *obj) {
+        return Handle<ObjectType>((uint32_t)idx, objects_[idx].gen_);
+      }
+    }
+
+    return {};
+  }
+  void clear() noexcept {
+    objects_.clear();
+    freeListHead_ = kListEndSentinel;
+    numObjects_ = 0;
+  }
+  [[nodiscard]] uint32_t numObjects() const noexcept {
+    return numObjects_;
+  }
+};
 
 } // namespace igl
 

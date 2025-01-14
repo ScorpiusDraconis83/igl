@@ -46,7 +46,7 @@ Result checkFramebufferStatus(IContext& context, bool read) {
     framebufferTarget = read ? GL_READ_FRAMEBUFFER : GL_DRAW_FRAMEBUFFER;
   }
   // check that we've created a proper frame buffer
-  GLenum status = context.checkFramebufferStatus(framebufferTarget);
+  const GLenum status = context.checkFramebufferStatus(framebufferTarget);
   if (status != GL_FRAMEBUFFER_COMPLETE) {
     code = Result::Code::RuntimeError;
 
@@ -95,9 +95,9 @@ Texture::AttachmentParams defaultWriteAttachmentParams(FramebufferMode mode) {
 
 Texture::AttachmentParams toReadAttachmentParams(const TextureRangeDesc& range,
                                                  FramebufferMode mode) {
-  IGL_ASSERT_MSG(range.numLayers == 1, "range.numLayers must be 1.");
-  IGL_ASSERT_MSG(range.numMipLevels == 1, "range.numMipLevels must be 1.");
-  IGL_ASSERT_MSG(range.numFaces == 1, "range.numFaces must be 1.");
+  IGL_DEBUG_ASSERT(range.numLayers == 1, "range.numLayers must be 1.");
+  IGL_DEBUG_ASSERT(range.numMipLevels == 1, "range.numMipLevels must be 1.");
+  IGL_DEBUG_ASSERT(range.numFaces == 1, "range.numFaces must be 1.");
 
   Texture::AttachmentParams params{};
   params.face = static_cast<uint32_t>(range.face);
@@ -158,7 +158,7 @@ void Framebuffer::attachAsColor(igl::ITexture& texture,
                                 uint32_t index,
                                 const Texture::AttachmentParams& params) const {
   static_cast<Texture&>(texture).attachAsColor(index, params);
-  IGL_ASSERT(index >= 0 && index < kNumCachedStates);
+  IGL_DEBUG_ASSERT(index >= 0 && index < kNumCachedStates);
   colorCachedState_[index].updateCache(params.stereo ? FramebufferMode::Stereo
                                                      : FramebufferMode::Mono,
                                        params.layer,
@@ -204,86 +204,173 @@ void Framebuffer::copyBytesColorAttachment(ICommandQueue& /* unused */,
                                            size_t bytesPerRow) const {
   // Only support attachment 0 because that's what glReadPixels supports
   if (index != 0) {
-    IGL_ASSERT_MSG(0, "Invalid index: %d", index);
+    IGL_DEBUG_ABORT("Invalid index: %d", index);
     return;
   }
-  IGL_ASSERT_MSG(range.numFaces == 1, "range.numFaces MUST be 1");
-  IGL_ASSERT_MSG(range.numLayers == 1, "range.numLayers MUST be 1");
-  IGL_ASSERT_MSG(range.numMipLevels == 1, "range.numMipLevels MUST be 1");
+  IGL_DEBUG_ASSERT(range.numFaces == 1, "range.numFaces MUST be 1");
+  IGL_DEBUG_ASSERT(range.numLayers == 1, "range.numLayers MUST be 1");
+  IGL_DEBUG_ASSERT(range.numMipLevels == 1, "range.numMipLevels MUST be 1");
 
   auto itexture = getColorAttachment(index);
-  if (itexture != nullptr) {
-    FramebufferBindingGuard guard(getContext());
-
-    CustomFramebuffer extraFramebuffer(getContext());
-
-    auto& texture = static_cast<igl::opengl::Texture&>(*itexture);
-
-    Result ret;
-    FramebufferDesc desc;
-    desc.colorAttachments[0].texture = itexture;
-    extraFramebuffer.initialize(desc, &ret);
-    IGL_ASSERT_MSG(ret.isOk(), ret.message.c_str());
-
-    extraFramebuffer.bindBufferForRead();
-    attachAsColor(*itexture, 0, toReadAttachmentParams(range, FramebufferMode::Mono));
-    checkFramebufferStatus(getContext(), true);
-
-    if (bytesPerRow == 0) {
-      bytesPerRow = itexture->getProperties().getBytesPerRow(range);
-    }
-    getContext().pixelStorei(GL_PACK_ALIGNMENT, texture.getAlignment(bytesPerRow, range.mipLevel));
-
-    // Note read out format is based on
-    // (https://www.khronos.org/registry/OpenGL-Refpages/es2.0/xhtml/glReadPixels.xml)
-    // as using GL_RGBA with GL_UNSIGNED_BYTE is the only always supported combination
-    // with glReadPixels.
-    getContext().flush();
-    auto format = GL_RGBA;
-    auto intFormat = GL_RGBA_INTEGER;
-
-    // @fb-only
-    if (texture.getFormat() == TextureFormat::RGBA_UInt32) {
-      if (getContext().deviceFeatures().hasTextureFeature(TextureFeatures::TextureInteger)) {
-        getContext().readPixels(static_cast<GLint>(range.x),
-                                static_cast<GLint>(range.y),
-                                static_cast<GLsizei>(range.width),
-                                static_cast<GLsizei>(range.height),
-                                intFormat,
-                                GL_UNSIGNED_INT,
-                                pixelBytes);
-      } else {
-        IGL_ASSERT_NOT_IMPLEMENTED();
-      }
-    } else {
-      getContext().readPixels(static_cast<GLint>(range.x),
-                              static_cast<GLint>(range.y),
-                              static_cast<GLsizei>(range.width),
-                              static_cast<GLsizei>(range.height),
-                              format,
-                              GL_UNSIGNED_BYTE,
-                              pixelBytes);
-    }
-    getContext().checkForErrors(nullptr, 0);
-    auto error = getContext().getLastError();
-    IGL_ASSERT_MSG(error.isOk(), error.message.c_str());
-  } else {
-    IGL_ASSERT_NOT_IMPLEMENTED();
+  if (itexture == nullptr) {
+    IGL_DEBUG_ABORT("The framebuffer does not have any color attachment at index %d", index);
+    return;
   }
+
+  const FramebufferBindingGuard guard(getContext());
+
+  CustomFramebuffer extraFramebuffer(getContext());
+
+  auto& texture = static_cast<igl::opengl::Texture&>(*itexture);
+
+  Result ret;
+  FramebufferDesc desc;
+  desc.colorAttachments[0].texture = itexture;
+  extraFramebuffer.initialize(desc, &ret);
+  IGL_DEBUG_ASSERT(ret.isOk(), ret.message.c_str());
+
+  extraFramebuffer.bindBufferForRead();
+  attachAsColor(*itexture, 0, toReadAttachmentParams(range, FramebufferMode::Mono));
+  checkFramebufferStatus(getContext(), true);
+
+  const bool packRowLengthSupported =
+      getContext().deviceFeatures().hasInternalFeature(InternalFeatures::PackRowLength);
+  // The bytesPerRow value is used to decide both the alignment and the row length. We will only use
+  // usePackRowLength when bytesPerRow is set and is a multiple of the block size.
+  const bool usePackRowLength = packRowLengthSupported && bytesPerRow != 0 &&
+                                bytesPerRow % itexture->getProperties().bytesPerBlock == 0;
+
+  if (usePackRowLength) {
+    const int packRowLength =
+        static_cast<int>(bytesPerRow / itexture->getProperties().bytesPerBlock);
+    getContext().pixelStorei(GL_PACK_ROW_LENGTH, packRowLength);
+    getContext().pixelStorei(GL_PACK_ALIGNMENT, 1);
+  } else {
+    const int finalBytesPerRow = bytesPerRow == 0 ? itexture->getProperties().getBytesPerRow(range)
+                                                  : bytesPerRow;
+    if (packRowLengthSupported) {
+      getContext().pixelStorei(GL_PACK_ROW_LENGTH, 0);
+    }
+    getContext().pixelStorei(GL_PACK_ALIGNMENT,
+                             texture.getAlignment(finalBytesPerRow, range.mipLevel, range.width));
+  }
+
+  // Note read out format is based on
+  // (https://www.khronos.org/registry/OpenGL-Refpages/es2.0/xhtml/glReadPixels.xml)
+  // as using GL_RGBA with GL_UNSIGNED_BYTE is the only always supported combination
+  // with glReadPixels.
+  getContext().flush();
+
+  // @fb-only
+  // @fb-only
+  const auto rangeX = static_cast<GLint>(range.x);
+  const auto rangeY = static_cast<GLint>(range.y);
+  const auto rangeWidth = static_cast<GLsizei>(range.width);
+  const auto rangeHeight = static_cast<GLsizei>(range.height);
+  const auto textureFormat = texture.getFormat();
+  // Tests need GL_HALF_FLOAT_OES on iOS and GL_HALF_FLOAT on Android and everything else.
+  const auto kHalfFloatFormat = getContext().deviceFeatures().hasInternalRequirement(
+                                    InternalRequirement::TextureHalfFloatExtReq)
+                                    ? GL_HALF_FLOAT_OES
+                                    : GL_HALF_FLOAT;
+  if (textureFormat == TextureFormat::RGBA_UInt32) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasTextureFeature(TextureFeatures::TextureInteger))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RGBA_INTEGER, GL_UNSIGNED_INT, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::R_UNorm8) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFormatRG))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RED, GL_UNSIGNED_BYTE, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RG_UNorm8) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFormatRG))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RG, GL_UNSIGNED_BYTE, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RGBA_F16) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureHalfFloat))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RGBA, kHalfFloatFormat, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RGB_F16) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureHalfFloat))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RGB, kHalfFloatFormat, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RG_F16) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureHalfFloat)) &&
+        IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFormatRG))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RG, kHalfFloatFormat, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::R_F16) {
+    if (IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureHalfFloat)) &&
+        IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFormatRG))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RED, kHalfFloatFormat, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RGBA_F32) {
+    if (IGL_DEBUG_VERIFY(getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFloat))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RGBA, GL_FLOAT, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RGB_F32) {
+    if (IGL_DEBUG_VERIFY(getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFloat))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RGB, GL_FLOAT, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::RG_F32) {
+    if (IGL_DEBUG_VERIFY(getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFloat)) &&
+        IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFormatRG))) {
+      getContext().readPixels(rangeX, rangeY, rangeWidth, rangeHeight, GL_RG, GL_FLOAT, pixelBytes);
+    }
+  } else if (textureFormat == TextureFormat::R_F32) {
+    if (IGL_DEBUG_VERIFY(getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFloat)) &&
+        IGL_DEBUG_VERIFY(
+            getContext().deviceFeatures().hasFeature(DeviceFeatures::TextureFormatRG))) {
+      getContext().readPixels(
+          rangeX, rangeY, rangeWidth, rangeHeight, GL_RED, GL_FLOAT, pixelBytes);
+    }
+  } else {
+    getContext().readPixels(
+        rangeX, rangeY, rangeWidth, rangeHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixelBytes);
+  }
+
+  // Reset the GL_PACK_ROW_LENGTH
+  if (usePackRowLength) {
+    getContext().pixelStorei(GL_PACK_ROW_LENGTH, 0);
+  }
+  // Reset the GL_PACK_ALIGNMENT (default value for GL_PACK_ALIGNMENT is 4)
+  getContext().pixelStorei(GL_PACK_ALIGNMENT, 4);
+
+  getContext().checkForErrors(nullptr, 0);
+  auto error = getContext().getLastError();
+  IGL_DEBUG_ASSERT(error.isOk(), error.message.c_str());
 }
 
 void Framebuffer::copyBytesDepthAttachment(ICommandQueue& /* unused */,
                                            void* /*pixelBytes*/,
                                            const TextureRangeDesc& /*range*/,
                                            size_t /*bytesPerRow*/) const {
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
 void Framebuffer::copyBytesStencilAttachment(ICommandQueue& /* unused */,
                                              void* /*pixelBytes*/,
                                              const TextureRangeDesc& /*range*/,
                                              size_t /*bytesPerRow*/) const {
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
 void Framebuffer::copyTextureColorAttachment(ICommandQueue& /*cmdQueue*/,
@@ -292,11 +379,11 @@ void Framebuffer::copyTextureColorAttachment(ICommandQueue& /*cmdQueue*/,
                                              const TextureRangeDesc& range) const {
   // Only support attachment 0 because that's what glCopyTexImage2D supports
   if (index != 0 || getColorAttachment(index) == nullptr) {
-    IGL_ASSERT_MSG(0, "Invalid index: %d", index);
+    IGL_DEBUG_ABORT("Invalid index: %d", index);
     return;
   }
 
-  FramebufferBindingGuard guard(getContext());
+  const FramebufferBindingGuard guard(getContext());
 
   bindBufferForRead();
 
@@ -354,12 +441,12 @@ std::vector<size_t> CustomFramebuffer::getColorAttachmentIndices() const {
 }
 
 std::shared_ptr<ITexture> CustomFramebuffer::getColorAttachment(size_t index) const {
-  IGL_ASSERT(index < IGL_COLOR_ATTACHMENTS_MAX);
+  IGL_DEBUG_ASSERT(index < IGL_COLOR_ATTACHMENTS_MAX);
   return renderTarget_.colorAttachments[index].texture;
 }
 
 std::shared_ptr<ITexture> CustomFramebuffer::getResolveColorAttachment(size_t index) const {
-  IGL_ASSERT(index < IGL_COLOR_ATTACHMENTS_MAX);
+  IGL_DEBUG_ASSERT(index < IGL_COLOR_ATTACHMENTS_MAX);
   return renderTarget_.colorAttachments[index].resolveTexture;
 }
 
@@ -387,6 +474,12 @@ void CustomFramebuffer::updateDrawable(SurfaceTextures surfaceTextures) {
   updateDrawableInternal(std::move(surfaceTextures), true);
 }
 
+void CustomFramebuffer::updateResolveAttachment(std::shared_ptr<ITexture> texture) {
+  if (resolveFramebuffer) {
+    resolveFramebuffer->updateDrawable(texture);
+  }
+}
+
 void CustomFramebuffer::updateDrawableInternal(SurfaceTextures surfaceTextures,
                                                bool updateDepthStencil) {
   auto colorAttachment0 = getColorAttachment(0);
@@ -397,7 +490,7 @@ void CustomFramebuffer::updateDrawableInternal(SurfaceTextures surfaceTextures,
   updateDepthStencil = updateDepthStencil && (depthAttachment != surfaceTextures.depth ||
                                               stencilAttachment != surfaceTextures.depth);
   if (updateColor || updateDepthStencil) {
-    FramebufferBindingGuard guard(getContext());
+    const FramebufferBindingGuard guard(getContext());
     bindBuffer();
     if (updateColor) {
       if (!surfaceTextures.color) {
@@ -427,6 +520,11 @@ void CustomFramebuffer::updateDrawableInternal(SurfaceTextures surfaceTextures,
         if (surfaceTextures.depth->getProperties().hasStencil()) {
           attachAsStencil(*surfaceTextures.depth, defaultWriteAttachmentParams(renderTarget_.mode));
           renderTarget_.stencilAttachment.texture = surfaceTextures.depth;
+        } else {
+          if (stencilAttachment) {
+            static_cast<Texture&>(*stencilAttachment).detachAsStencil(false);
+          }
+          renderTarget_.stencilAttachment.texture = nullptr;
         }
         renderTarget_.depthAttachment.texture = std::move(surfaceTextures.depth);
       }
@@ -450,7 +548,7 @@ bool CustomFramebuffer::hasImplicitColorAttachment() const {
 }
 
 void CustomFramebuffer::initialize(const FramebufferDesc& desc, Result* outResult) {
-  if (IGL_UNEXPECTED(isInitialized())) {
+  if (IGL_DEBUG_VERIFY_NOT(isInitialized())) {
     Result::setResult(outResult, Result::Code::RuntimeError, "Framebuffer already initialized.");
     return;
   }
@@ -459,25 +557,29 @@ void CustomFramebuffer::initialize(const FramebufferDesc& desc, Result* outResul
   renderTarget_ = desc;
 
   // Restore framebuffer binding
-  FramebufferBindingGuard guard(getContext());
-  if (!desc.debugName.empty() &&
-      getContext().deviceFeatures().hasInternalFeature(InternalFeatures::DebugLabel)) {
-    getContext().objectLabel(
-        GL_FRAMEBUFFER, frameBufferID_, desc.debugName.size(), desc.debugName.c_str());
-  }
+  const FramebufferBindingGuard guard(getContext());
   if (hasImplicitColorAttachment()) {
     // Don't generate framebuffer id. Use implicit framebuffer supplied by containing view
     Result::setOk(outResult);
   } else {
-    prepareResource(outResult);
+    prepareResource(desc.debugName, outResult);
   }
 }
 
-void CustomFramebuffer::prepareResource(Result* outResult) {
+void CustomFramebuffer::prepareResource(const std::string& debugName, Result* outResult) {
   // create a new frame buffer if we don't already have one
   getContext().genFramebuffers(1, &frameBufferID_);
+  if (IGL_DEBUG_VERIFY_NOT(frameBufferID_ == 0)) {
+    Result::setResult(outResult, Result::Code::RuntimeError, "Failed to create framebuffer ID.");
+    return;
+  }
 
   bindBuffer();
+
+  if (!debugName.empty() &&
+      getContext().deviceFeatures().hasInternalFeature(InternalFeatures::DebugLabel)) {
+    getContext().objectLabel(GL_FRAMEBUFFER, frameBufferID_, debugName.size(), debugName.c_str());
+  }
 
   std::vector<GLenum> drawBuffers;
 
@@ -506,7 +608,7 @@ void CustomFramebuffer::prepareResource(Result* outResult) {
   }
 
   Result result = checkFramebufferStatus(getContext(), false);
-  IGL_ASSERT_MSG(result.isOk(), result.message.c_str());
+  IGL_DEBUG_ASSERT(result.isOk(), result.message.c_str());
   if (outResult) {
     *outResult = result;
   }
@@ -533,7 +635,7 @@ void CustomFramebuffer::prepareResource(Result* outResult) {
     }
   }
   if (createResolveFramebuffer && maskColorResolveAttachments != maskColorAttachments) {
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
     if (outResult) {
       *outResult = igl::Result(igl::Result::Code::ArgumentInvalid,
                                "If resolve texture is specified on a color attachment it must be "
@@ -569,7 +671,7 @@ Viewport CustomFramebuffer::getViewport() const {
   }
 
   if (texture == nullptr) {
-    IGL_ASSERT_MSG(0, "No color/depth attachments in CustomFrameBuffer at index 0");
+    IGL_DEBUG_ABORT("No color/depth attachments in CustomFrameBuffer at index 0");
     return {0, 0, 0, 0};
   }
 
@@ -581,8 +683,8 @@ Viewport CustomFramebuffer::getViewport() const {
 void CustomFramebuffer::bind(const RenderPassDesc& renderPass) const {
   // Cache renderPass for unbind
   renderPass_ = renderPass;
-  IGL_ASSERT_MSG(renderTarget_.mode != FramebufferMode::Multiview,
-                 "FramebufferMode::Multiview not supported");
+  IGL_DEBUG_ASSERT(renderTarget_.mode != FramebufferMode::Multiview,
+                   "FramebufferMode::Multiview not supported");
 
   bindBuffer();
 
@@ -602,12 +704,12 @@ void CustomFramebuffer::bind(const RenderPassDesc& renderPass) const {
     }
 #endif
     const size_t index = i;
-    IGL_ASSERT(index >= 0 && index < renderPass.colorAttachments.size());
+    IGL_DEBUG_ASSERT(index >= 0 && index < renderPass.colorAttachments.size());
     const auto& renderPassAttachment = renderPass.colorAttachments[index];
     // When setting up a framebuffer, we attach textures as though they were a non-array
     // texture with and set layer, mip-level and face equal to 0.
     // If any of these assumptions are not true, we need to reattach with proper values.
-    IGL_ASSERT(index >= 0 && index < kNumCachedStates);
+    IGL_DEBUG_ASSERT(index >= 0 && index < kNumCachedStates);
     if (colorCachedState_[index].needsUpdate(renderTarget_.mode,
                                              renderPassAttachment.layer,
                                              renderPassAttachment.face,
@@ -692,7 +794,7 @@ void CustomFramebuffer::unbind() const {
   }
 
   if (numAttachments > 0) {
-    auto& features = getContext().deviceFeatures();
+    const auto& features = getContext().deviceFeatures();
     if (features.hasInternalFeature(InternalFeatures::InvalidateFramebuffer)) {
       getContext().invalidateFramebuffer(GL_FRAMEBUFFER, numAttachments, attachments);
     }
@@ -721,14 +823,14 @@ std::vector<size_t> CurrentFramebuffer::getColorAttachmentIndices() const {
 
 std::shared_ptr<ITexture> CurrentFramebuffer::getColorAttachment(size_t index) const {
   if (index != 0) {
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
   }
   return colorAttachment_;
 }
 
 std::shared_ptr<ITexture> CurrentFramebuffer::getResolveColorAttachment(size_t index) const {
   if (index != 0) {
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
   }
   return colorAttachment_;
 }
@@ -746,11 +848,15 @@ std::shared_ptr<ITexture> CurrentFramebuffer::getStencilAttachment() const {
 }
 
 void CurrentFramebuffer::updateDrawable(std::shared_ptr<ITexture> /*texture*/) {
-  IGL_ASSERT_NOT_REACHED();
+  IGL_DEBUG_ASSERT_NOT_REACHED();
 }
 
 void CurrentFramebuffer::updateDrawable(SurfaceTextures /*surfaceTextures*/) {
-  IGL_ASSERT_NOT_REACHED();
+  IGL_DEBUG_ASSERT_NOT_REACHED();
+}
+
+void CurrentFramebuffer::updateResolveAttachment(std::shared_ptr<ITexture> /*texture*/) {
+  IGL_DEBUG_ASSERT_NOT_REACHED();
 }
 
 Viewport CurrentFramebuffer::getViewport() const {
@@ -773,18 +879,18 @@ void CurrentFramebuffer::bind(const RenderPassDesc& renderPass) const {
 
   // clear the buffers if we're not loading previous contents
   GLbitfield clearMask = 0;
-  if (renderPass.colorAttachments[0].loadAction != LoadAction::Load) {
+  if (renderPass.colorAttachments[0].loadAction == LoadAction::Clear) {
     clearMask |= GL_COLOR_BUFFER_BIT;
     auto clearColor = renderPass.colorAttachments[0].clearColor;
     getContext().colorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     getContext().clearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
   }
-  if (renderPass.depthAttachment.loadAction != LoadAction::Load) {
+  if (renderPass.depthAttachment.loadAction == LoadAction::Clear) {
     clearMask |= GL_DEPTH_BUFFER_BIT;
     getContext().depthMask(GL_TRUE);
     getContext().clearDepthf(renderPass.depthAttachment.clearDepth);
   }
-  if (renderPass.stencilAttachment.loadAction != LoadAction::Load) {
+  if (renderPass.stencilAttachment.loadAction == LoadAction::Clear) {
     clearMask |= GL_STENCIL_BUFFER_BIT;
     getContext().stencilMask(0xFF);
     getContext().clearStencil(renderPass.stencilAttachment.clearStencil);

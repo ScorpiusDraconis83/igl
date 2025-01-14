@@ -19,12 +19,20 @@ namespace igl::vulkan {
 
 class VulkanContext;
 class VulkanDescriptorSetLayout;
-class VulkanPipelineLayout;
 
 class PipelineState {
  public:
-  PipelineState(const VulkanContext& ctx, IShaderStages* stages, const char* debugName);
+  PipelineState(const VulkanContext& ctx,
+                IShaderStages* stages,
+                std::shared_ptr<ISamplerState> immutableSamplers[IGL_TEXTURE_SAMPLERS_MAX],
+                uint32_t isDynamicBufferMask,
+                const char* debugName);
   virtual ~PipelineState() = default;
+
+  PipelineState(const PipelineState&) = delete;
+  PipelineState(PipelineState&&) = delete;
+  PipelineState& operator=(const PipelineState&) = delete;
+  PipelineState& operator=(PipelineState&&) = delete;
 
   VkPipelineLayout getVkPipelineLayout() const;
 
@@ -39,15 +47,15 @@ class PipelineState {
   igl::vulkan::util::SpvModuleInfo info_;
 
   VkPushConstantRange pushConstantRange_ = {};
+  VkShaderStageFlags stageFlags_ = 0;
 
-  mutable std::unique_ptr<igl::vulkan::VulkanPipelineLayout> pipelineLayout_;
+  mutable VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
   // the last seen VkDescriptorSetLayout from VulkanContext::dslBindless_
   mutable VkDescriptorSetLayout lastBindlessVkDescriptorSetLayout_ = VK_NULL_HANDLE;
 
-  std::shared_ptr<VulkanDescriptorSetLayout> dslCombinedImageSamplers_;
-  std::shared_ptr<VulkanDescriptorSetLayout> dslUniformBuffers_;
-  std::shared_ptr<VulkanDescriptorSetLayout> dslStorageBuffers_;
+  std::unique_ptr<VulkanDescriptorSetLayout> dslCombinedImageSamplers_;
+  std::unique_ptr<VulkanDescriptorSetLayout> dslBuffers_;
 };
 
 } // namespace igl::vulkan

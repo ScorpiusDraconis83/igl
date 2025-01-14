@@ -48,10 +48,9 @@ igl::UniformType metalDataTypeToIGLUniformType(MTLDataType type) {
   }
 }
 
-}
+} // namespace
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 RenderPipelineReflection::RenderPipelineReflection(MTLRenderPipelineReflection* refl) {
   if (refl != nullptr) {
     for (MTLArgument* arg in refl.vertexArguments) {
@@ -123,7 +122,7 @@ bool RenderPipelineReflection::createArgDesc(MTLArgument* arg, ShaderStage sh) {
     loc = samplerArguments_.size() - 1;
   } else {
     /// thread group mem and array argument type is not yet supported
-    IGL_DEBUG_LOG("IGL Metal Reflection: unsupported argument type");
+    IGL_LOG_DEBUG("IGL Metal Reflection: unsupported argument type");
     /// just skip this one
     return false;
   }
@@ -169,5 +168,4 @@ const std::vector<igl::TextureArgDesc>& RenderPipelineReflection::allTextures() 
   return textureArguments_;
 }
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

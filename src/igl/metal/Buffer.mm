@@ -17,10 +17,10 @@ igl::Result upload(const std::vector<id<MTLBuffer>>& buffers,
                    const igl::BufferRange& range,
                    MTLResourceOptions resourceOptions,
                    igl::BufferDesc::BufferAPIHint acceptedApiHints) {
-  IGL_ASSERT(bufferIdx < buffers.size());
+  IGL_DEBUG_ASSERT(bufferIdx < buffers.size());
   const auto& buffer = buffers[bufferIdx];
   auto length = [buffer length];
-  if (!IGL_VERIFY(range.offset + range.size <= length)) {
+  if (!IGL_DEBUG_VERIFY(range.offset + range.size <= length)) {
     return igl::Result(igl::Result::Code::ArgumentOutOfRange);
   }
 
@@ -33,7 +33,7 @@ igl::Result upload(const std::vector<id<MTLBuffer>>& buffers,
     checked_memcpy_offset(contents, length, range.offset, data, range.size);
   }
 
-#if IGL_PLATFORM_MACOS
+#if IGL_PLATFORM_MACOSX
   if ((resourceOptions & MTLResourceStorageModeMask) == MTLResourceStorageModeManaged) {
     [buffer didModifyRange:NSMakeRange(range.offset, range.size)];
   }
@@ -55,7 +55,7 @@ void* map(const std::vector<id<MTLBuffer>>& buffers,
     return nullptr;
   }
 
-  IGL_ASSERT(bufferIdx < buffers.size());
+  IGL_DEBUG_ASSERT(bufferIdx < buffers.size());
   const auto& buffer = buffers[bufferIdx];
   if ([buffer length] < (range.size + range.offset)) {
     igl::Result::setResult(outResult,
@@ -76,11 +76,11 @@ igl::Result copyFromPreviousBufferInstance(std::vector<id<MTLBuffer>>& buffers,
     return igl::Result();
   }
 
-  size_t prevIdx = bufferIdx == 0 ? buffers.size() - 1 : bufferIdx - 1;
-  IGL_ASSERT([buffers[bufferIdx] length] == [buffers[prevIdx] length]);
+  const size_t prevIdx = bufferIdx == 0 ? buffers.size() - 1 : bufferIdx - 1;
+  IGL_DEBUG_ASSERT([buffers[bufferIdx] length] == [buffers[prevIdx] length]);
 
   auto length = [buffers[bufferIdx] length];
-  auto srcContents = [buffers[prevIdx] contents];
+  auto* srcContents = [buffers[prevIdx] contents];
   return ::upload(buffers,
                   bufferIdx,
                   srcContents,
@@ -88,10 +88,9 @@ igl::Result copyFromPreviousBufferInstance(std::vector<id<MTLBuffer>>& buffers,
                   resourceOptions,
                   acceptedApiHints);
 }
-}
+} // namespace
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Buffer::Buffer(id<MTLBuffer> value,
                MTLResourceOptions options,
@@ -113,7 +112,7 @@ void* Buffer::map(const BufferRange& range, Result* outResult) {
   return ::map(mtlBuffers_, 0, range, outResult, resourceOptions_);
 }
 
-void Buffer::unmap(){};
+void Buffer::unmap() {};
 
 BufferDesc::BufferAPIHint Buffer::requestedApiHints() const noexcept {
   return requestedApiHints_;
@@ -124,11 +123,11 @@ BufferDesc::BufferAPIHint Buffer::acceptedApiHints() const noexcept {
 }
 
 ResourceStorage Buffer::storage() const noexcept {
-#if IGL_PLATFORM_MACOS
+#if IGL_PLATFORM_MACOSX
   if ((resourceOptions_ & MTLResourceStorageModeMask) == MTLResourceStorageModeManaged) {
     return ResourceStorage::Managed;
   }
-#endif // IGL_PLATFORM_MACOS
+#endif // IGL_PLATFORM_MACOSX
   if ((resourceOptions_ & MTLResourceStorageModeMask) == MTLResourceStorageModePrivate) {
     return ResourceStorage::Private;
   }
@@ -145,9 +144,9 @@ size_t Buffer::getSizeInBytes() const {
   return [mtlBuffers_[0] length];
 }
 
-uint64_t Buffer::gpuAddress(size_t) const {
+uint64_t Buffer::gpuAddress(size_t /*offset*/) const {
   // TODO: implement via gpuResourceID
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
   return 0;
 }
 
@@ -187,23 +186,23 @@ Result RingBuffer::upload(const void* data, const BufferRange& range) {
 }
 
 void* RingBuffer::map(const BufferRange& /* unused */, Result* /* unused */) {
-  IGL_ASSERT_MSG(0, "map() operation not supported for RingBuffer");
+  IGL_DEBUG_ABORT("map() operation not supported for RingBuffer");
   return nullptr;
 }
 
 void RingBuffer::unmap() {
-  IGL_ASSERT_MSG(0, "unmap() operation not supported for RingBuffer");
+  IGL_DEBUG_ABORT("unmap() operation not supported for RingBuffer");
 }
 
 id<MTLBuffer> RingBuffer::get() {
   auto bufferIdx = syncManager_->getCurrentInFlightBufferIndex();
-  IGL_ASSERT(bufferIdx < mtlBuffers_.size());
+  IGL_DEBUG_ASSERT(bufferIdx < mtlBuffers_.size());
   if (bufferIdx != lastUpdatedBufferIdx_) {
     // client hasn't updated the buffer at this idx; Update from the previous buffer instance
     auto result =
         copyFromPreviousBufferInstance(mtlBuffers_, bufferIdx, resourceOptions_, acceptedApiHints_);
     if (!result.isOk()) {
-      IGL_ASSERT_MSG(0, "Failed to copy buffer");
+      IGL_DEBUG_ABORT("Failed to copy buffer");
       return nullptr;
     }
 
@@ -212,5 +211,4 @@ id<MTLBuffer> RingBuffer::get() {
   return mtlBuffers_[bufferIdx];
 }
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

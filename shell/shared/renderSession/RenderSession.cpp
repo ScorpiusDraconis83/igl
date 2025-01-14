@@ -7,11 +7,15 @@
 
 #include <shell/shared/renderSession/RenderSession.h>
 
+#include <chrono>
+#include <shell/shared/platform/DisplayContext.h>
+#include <shell/shared/renderSession/AppParams.h>
 #include <shell/shared/renderSession/ShellParams.h>
 
 namespace igl::shell {
+
 RenderSession::RenderSession(std::shared_ptr<Platform> platform) :
-  platform_(std::move(platform)), appParams_(std::make_unique<AppParams>()) {}
+  platform_(std::move(platform)), appParams_(std::make_shared<AppParams>()) {}
 
 void RenderSession::updateDisplayScale(float scale) noexcept {
   platform_->getDisplayContext().scale = scale;
@@ -23,10 +27,6 @@ float RenderSession::pixelsPerPoint() const noexcept {
 
 void RenderSession::setPixelsPerPoint(float scale) noexcept {
   platform_->getDisplayContext().pixelsPerPoint = scale;
-}
-
-void RenderSession::setShellParams(const ShellParams& shellParams) noexcept {
-  shellParams_ = &shellParams;
 }
 
 const ShellParams& RenderSession::shellParams() const noexcept {
@@ -51,6 +51,27 @@ const Platform& RenderSession::getPlatform() const noexcept {
 
 const std::shared_ptr<Platform>& RenderSession::platform() const noexcept {
   return platform_;
+}
+
+float RenderSession::getDeltaSeconds() noexcept {
+  const double newTime = getSeconds();
+  const float deltaSeconds = float(newTime - lastTime_);
+  lastTime_ = newTime;
+  return deltaSeconds;
+}
+
+double RenderSession::getSeconds() noexcept {
+  return std::chrono::duration<double>(std::chrono::high_resolution_clock::now().time_since_epoch())
+      .count();
+}
+
+void RenderSession::setPreferredClearColor(const igl::Color& color) noexcept {
+  preferredClearColor_ = color;
+}
+
+igl::Color RenderSession::getPreferredClearColor() noexcept {
+  return preferredClearColor_.has_value() ? preferredClearColor_.value()
+                                          : platform()->getDevice().backendDebugColor();
 }
 
 } // namespace igl::shell

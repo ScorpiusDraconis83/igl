@@ -11,16 +11,15 @@
 #include <igl/CommandQueue.h>
 #include <igl/metal/Device.h>
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 
 class BufferSynchronizationManager;
-class DeviceStatistics;
 
 class CommandQueue final : public ICommandQueue {
  public:
-  CommandQueue(id<MTLCommandQueue> value,
-               std::shared_ptr<BufferSynchronizationManager> syncManager,
+  CommandQueue(igl::metal::Device& device,
+               id<MTLCommandQueue> value,
+               const std::shared_ptr<BufferSynchronizationManager>& syncManager,
                DeviceStatistics& deviceStatistics) noexcept;
   std::shared_ptr<ICommandBuffer> createCommandBuffer(const CommandBufferDesc& desc,
                                                       Result* outResult) override;
@@ -37,7 +36,7 @@ class CommandQueue final : public ICommandQueue {
   id<MTLCommandQueue> value_;
   std::shared_ptr<BufferSynchronizationManager> bufferSyncManager_;
   DeviceStatistics& deviceStatistics_;
+  igl::metal::Device& device_;
 };
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

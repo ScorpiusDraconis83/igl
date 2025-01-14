@@ -6,7 +6,6 @@
  */
 
 #include "data/ShaderData.h"
-#include "data/TextureData.h"
 #include "data/VertexIndexData.h"
 #include "util/Common.h"
 #include "util/TestDevice.h"
@@ -15,12 +14,9 @@
 #include <glm/glm.hpp>
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
-#include <igl/opengl/IContext.h>
-#include <igl/opengl/PlatformDevice.h>
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 // Use a 1x1 Framebuffer for this test
 constexpr size_t kOffScreenWidth = 1;
@@ -44,7 +40,7 @@ class MultiviewTest : public ::testing::Test {
                                                                         igl::Result* /*result*/) {
     std::shared_ptr<iglu::ManagedUniformBuffer> vertUniformBuffer = nullptr;
 
-    iglu::ManagedUniformBufferInfo ubInfo = {
+    const iglu::ManagedUniformBufferInfo ubInfo = {
         1,
         sizeof(Colors),
         {
@@ -54,7 +50,7 @@ class MultiviewTest : public ::testing::Test {
 
     vertUniformBuffer = std::make_shared<iglu::ManagedUniformBuffer>(device, ubInfo);
 
-    IGL_ASSERT(vertUniformBuffer->result.isOk());
+    IGL_DEBUG_ASSERT(vertUniformBuffer->result.isOk());
     return vertUniformBuffer;
   }
 
@@ -72,7 +68,7 @@ class MultiviewTest : public ::testing::Test {
   void SetUp() override {
     setDebugBreakEnabled(false);
 
-    std::vector<igl::DeviceFeatures> requestedFeatures{igl::DeviceFeatures::Multiview};
+    const std::vector<igl::DeviceFeatures> requestedFeatures{igl::DeviceFeatures::Multiview};
 
     util::createDeviceAndQueue(iglDev_, cmdQueue_);
     ASSERT_NE(iglDev_, nullptr);
@@ -82,7 +78,7 @@ class MultiviewTest : public ::testing::Test {
       GTEST_SKIP() << "Multiview is unsupported for this platform.";
       return;
     }
-#if IGL_PLATFORM_WIN || (IGL_PLATFORM_LINUX && !IGL_PLATFORM_LINUX_USE_EGL)
+#if IGL_PLATFORM_WINDOWS || (IGL_PLATFORM_LINUX && !IGL_PLATFORM_LINUX_USE_EGL)
     if (iglDev_->getBackendType() == igl::BackendType::OpenGL) {
       GTEST_SKIP() << "Multiview is unsupported for this platform.";
       return;
@@ -90,20 +86,20 @@ class MultiviewTest : public ::testing::Test {
 #endif
 
     // Create an offscreen texture to render to
-    TextureDesc texDesc = TextureDesc::new2DArray(TextureFormat::RGBA_UNorm8,
-                                                  kOffScreenWidth,
-                                                  kOffScreenHeight,
-                                                  2,
-                                                  TextureDesc::TextureUsageBits::Sampled |
-                                                      TextureDesc::TextureUsageBits::Attachment);
+    const TextureDesc texDesc = TextureDesc::new2DArray(
+        TextureFormat::RGBA_UNorm8,
+        kOffScreenWidth,
+        kOffScreenHeight,
+        2,
+        TextureDesc::TextureUsageBits::Sampled | TextureDesc::TextureUsageBits::Attachment);
 
     auto depthFormat = TextureFormat::S8_UInt_Z32_UNorm;
 
-#ifndef IGL_PLATFORM_MACOS
+#ifndef IGL_PLATFORM_MACOSX
     if (backend_ == util::BACKEND_VUL) {
       depthFormat = TextureFormat::S8_UInt_Z24_UNorm;
     }
-#endif // IGL_PLATFORM_MACOS
+#endif // IGL_PLATFORM_MACOSX
 
     TextureDesc depthTexDesc = TextureDesc::new2DArray(depthFormat,
                                                        kOffScreenWidth,
@@ -149,7 +145,7 @@ class MultiviewTest : public ::testing::Test {
     inputDesc.numAttributes = inputDesc.numInputBindings = 1;
 
     vertexInputState_ = iglDev_->createVertexInputState(inputDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_NE(vertexInputState_, nullptr);
 
     // Initialize index buffer
@@ -160,7 +156,7 @@ class MultiviewTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_IND);
 
     ib_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_NE(ib_, nullptr);
 
     // Initialize vertex and sampler buffers
@@ -169,7 +165,7 @@ class MultiviewTest : public ::testing::Test {
     bufDesc.length = sizeof(data::vertex_index::QUAD_VERT);
 
     vb_ = iglDev_->createBuffer(bufDesc, &ret);
-    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
     ASSERT_NE(vb_, nullptr);
 
     // Initialize Render Pipeline Descriptor, but leave the creation
@@ -257,11 +253,11 @@ TEST_F(MultiviewTest, SinglePassStereo) {
 
   Result ret;
   framebuffer_ = iglDev_->createFramebuffer(framebufferDesc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_NE(framebuffer_, nullptr);
 
   Result result{};
-  auto vertUniformBuffer = createVertexUniformBuffer(*iglDev_.get(), &result);
+  auto vertUniformBuffer = createVertexUniformBuffer(*iglDev_, &result);
   ASSERT_TRUE(result.isOk());
 
   colors_[0].r = 1.0f;
@@ -277,27 +273,28 @@ TEST_F(MultiviewTest, SinglePassStereo) {
   *static_cast<Colors*>(vertUniformBuffer->getData()) = colors_;
 
   const auto pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_NE(pipelineState, nullptr);
 
   DepthStencilStateDesc desc;
   desc.isDepthWriteEnabled = true;
   const auto depthStencilState = iglDev_->createDepthStencilState(desc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_NE(depthStencilState, nullptr);
 
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_NE(cmdBuf_, nullptr);
   auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
 
   cmds->bindRenderPipelineState(pipelineState);
   cmds->bindDepthStencilState(depthStencilState);
 
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  vertUniformBuffer->bind(*iglDev_.get(), *pipelineState, *cmds.get());
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  vertUniformBuffer->bind(*iglDev_, *pipelineState, *cmds);
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
   cmdBuf_->present(framebuffer_->getColorAttachment(0));
@@ -318,5 +315,4 @@ TEST_F(MultiviewTest, SinglePassStereo) {
   framebuffer_->copyBytesColorAttachment(*cmdQueue_, 0, pixels.data(), rangeDesc);
   EXPECT_EQ(pixels[0], 0xffffff00);
 }
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests
