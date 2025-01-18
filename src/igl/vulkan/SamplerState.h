@@ -11,10 +11,8 @@
 #include <igl/SamplerState.h>
 #include <igl/vulkan/Common.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
-class VulkanSampler;
 class Device;
 
 /**
@@ -31,8 +29,11 @@ class SamplerState final : public ISamplerState {
    * After instantiation, the object contains a reference to the device for creating the resource,
    * which can be done by calling the create() method with the desired configuration
    */
-  explicit SamplerState(const igl::vulkan::Device& device);
+  explicit SamplerState(igl::vulkan::Device& device);
   ~SamplerState() override = default;
+
+  SamplerState(const SamplerState&) = delete;
+  SamplerState& operator=(const SamplerState&) = delete;
 
   /**
    * @brief Returns the ID of the sampler. Its ID is the index of the sampler into the vector of
@@ -41,7 +42,12 @@ class SamplerState final : public ISamplerState {
    * This ID is intended for bindless rendering. See the ResourcesBinder and VulkanContext classes
    * for more information
    */
-  uint32_t getSamplerId() const;
+  [[nodiscard]] uint32_t getSamplerId() const;
+
+  /**
+   * @brief Returns true if this sampler is a YUV sampler.
+   */
+  [[nodiscard]] bool isYUV() const noexcept override;
 
  private:
   /**
@@ -50,15 +56,16 @@ class SamplerState final : public ISamplerState {
   Result create(const SamplerStateDesc& desc);
 
  private:
+  friend class PipelineState;
   friend class ResourcesBinder;
+  friend class VulkanContext;
 
   /** @brief The device used to create the resource */
-  const igl::vulkan::Device& device_;
+  igl::vulkan::Device& device_;
   /** @brief The texture sampling configuration for accessing a texture */
   SamplerStateDesc desc_;
   /** @brief The VulkanSampler instance associated with this sampler */
-  std::shared_ptr<VulkanSampler> sampler_;
+  Holder<SamplerHandle> sampler_;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

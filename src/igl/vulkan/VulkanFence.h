@@ -10,11 +10,9 @@
 #include <memory>
 
 #include <igl/vulkan/Common.h>
-#include <igl/vulkan/VulkanFunctions.h>
 #include <igl/vulkan/VulkanHelpers.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 /**
  * @brief Fences are used to synchronize CPU-GPU tasks. The VulkanFence class encapsulates the
@@ -36,6 +34,18 @@ class VulkanFence final {
   VulkanFence(const VulkanFence&) = delete;
   VulkanFence operator=(const VulkanFence&) = delete;
 
+  bool reset() noexcept;
+  bool wait(uint64_t timeoutNs = UINT64_MAX) noexcept;
+
+  /** @brief Signals the fence on the provided queue.
+   *
+   * This does not wait for completion of the signal, it merely
+   * executes the vkQueueSubmit with the fence and no actual workload
+   * so that the fence is signaled as soon as the queue workload executes
+   * on the GPU.
+   */
+  bool signal(VkQueue queue);
+
  public:
   const VulkanFunctionTable* vf_{};
   VkDevice device_ = VK_NULL_HANDLE;
@@ -43,5 +53,4 @@ class VulkanFence final {
   bool exportable_ = false;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

@@ -23,23 +23,27 @@ constexpr uint32_t kIGLMetalBeginCommandBufferToCapture = 0;
 constexpr uint32_t kIGLMetalEndCommandBufferToCapture =
     kIGLMetalBeginCommandBufferToCapture + kIGLMetalNumberCommandBuffersToCapture;
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 
-CommandQueue::CommandQueue(id<MTLCommandQueue> value,
-                           std::shared_ptr<BufferSynchronizationManager> syncManager,
+CommandQueue::CommandQueue(igl::metal::Device& device,
+                           id<MTLCommandQueue> value,
+                           const std::shared_ptr<BufferSynchronizationManager>& syncManager,
                            DeviceStatistics& deviceStatistics) noexcept :
-  value_(value), bufferSyncManager_(std::move(syncManager)), deviceStatistics_(deviceStatistics) {
+  value_(value),
+  bufferSyncManager_(syncManager),
+  deviceStatistics_(deviceStatistics),
+  device_(device) {
   if constexpr (kIGLMetalNumberCommandBuffersToCapture > 0 &&
                 kIGLMetalBeginCommandBufferToCapture == 0) {
     startCapture(value_);
   }
 }
 
-std::shared_ptr<ICommandBuffer> CommandQueue::createCommandBuffer(const CommandBufferDesc& /*desc*/,
+std::shared_ptr<ICommandBuffer> CommandQueue::createCommandBuffer(const CommandBufferDesc& desc,
                                                                   Result* outResult) {
   id<MTLCommandBuffer> metalObject = [value_ commandBuffer];
-  auto resource = std::make_shared<CommandBuffer>(metalObject);
+  metalObject.label = [NSString stringWithUTF8String:desc.debugName.c_str()];
+  auto resource = std::make_shared<CommandBuffer>(device_, metalObject);
   Result::setOk(outResult);
   return resource;
 }
@@ -88,5 +92,4 @@ void CommandQueue::stopCapture() {
   [captureManager stopCapture];
 }
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

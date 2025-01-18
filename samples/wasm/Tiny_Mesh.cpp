@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <emscripten/html5.h>
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
@@ -154,14 +156,14 @@ static std::shared_ptr<ITexture> getNativeDrawable() {
   auto platformDevice = static_cast<igl::IDevice*>(device_.get())
                             ->getPlatformDevice<igl::opengl::webgl::PlatformDevice>();
 
-  IGL_ASSERT(platformDevice != nullptr);
+  IGL_DEBUG_ASSERT(platformDevice != nullptr);
 
   getRenderingBufferSize(width_, height_);
   std::shared_ptr<ITexture> drawable =
       platformDevice->createTextureFromNativeDrawable(width_, height_, &ret);
 
-  IGL_ASSERT_MSG(ret.isOk(), ret.message.c_str());
-  IGL_ASSERT(drawable != nullptr);
+  IGL_DEBUG_ASSERT(ret.isOk(), ret.message.c_str());
+  IGL_DEBUG_ASSERT(drawable != nullptr);
 
   return drawable;
 }
@@ -171,7 +173,7 @@ static void createFramebuffer(const std::shared_ptr<ITexture>& nativeDrawable) {
   framebufferDesc.colorAttachments[0].texture = nativeDrawable;
   framebuffer_ = device_->createFramebuffer(framebufferDesc, nullptr);
 
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 }
 
 bool initialize() {
@@ -207,7 +209,7 @@ bool initialize() {
 
   renderPass_.depthAttachment.loadAction = LoadAction::DontCare;
 
-  CommandQueueDesc desc{CommandQueueType::Graphics};
+  CommandQueueDesc desc{};
   commandQueue_ = device_->createCommandQueue(desc, nullptr);
 
   // Vertex buffer, Index buffer and Vertex Input. Buffers are allocated in GPU memory.
@@ -336,7 +338,7 @@ static void createRenderPipeline() {
     return;
   }
 
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
   RenderPipelineDesc desc;
 
   desc.targetDesc.colorAttachments.resize(1);
@@ -355,8 +357,8 @@ static void createRenderPipeline() {
   desc.debugName = igl::genNameHandle("Pipeline: mesh");
   desc.fragmentUnitSamplerMap[0] = IGL_NAMEHANDLE("texture0");
   desc.fragmentUnitSamplerMap[1] = IGL_NAMEHANDLE("texture1");
-  desc.uniformBlockBindingMap[0] = std::make_pair(IGL_NAMEHANDLE("perFrame"), igl::NameHandle{});
-  desc.uniformBlockBindingMap[1] = std::make_pair(IGL_NAMEHANDLE("perObject"), igl::NameHandle{});
+  desc.uniformBlockBindingMap[0] = {std::make_pair(IGL_NAMEHANDLE("PerFrame"), igl::NameHandle{})};
+  desc.uniformBlockBindingMap[1] = {std::make_pair(IGL_NAMEHANDLE("PerObject"), igl::NameHandle{})};
 
   renderPipelineState_Mesh_ = device_->createRenderPipeline(desc, nullptr);
 }
@@ -400,17 +402,17 @@ void onDraw(void*) {
   commands->bindViewport(viewport);
   commands->bindScissorRect(scissor);
   commands->pushDebugGroupLabel("Render Mesh", igl::Color(1, 0, 0));
-  commands->bindBuffer(0, BindTarget::kVertex, vb0_, 0);
+  commands->bindVertexBuffer(0, *vb0_);
   commands->bindDepthStencilState(depthStencilState_);
-  commands->bindBuffer(0, BindTarget::kAllGraphics, ubPerFrame_[frameIndex], 0);
+  commands->bindBuffer(0, ubPerFrame_[frameIndex].get());
   commands->bindTexture(0, igl::BindTarget::kFragment, texture0_.get());
   commands->bindTexture(1, igl::BindTarget::kFragment, texture1_.get());
   commands->bindSamplerState(0, igl::BindTarget::kFragment, sampler_.get());
+  commands->bindIndexBuffer(*ib0_, IndexFormat::UInt16);
   // Draw 2 cubes: we use uniform buffer to update matrices
   for (uint32_t i = 0; i != kNumCubes; i++) {
-    commands->bindBuffer(
-        1, BindTarget::kAllGraphics, ubPerObject_[frameIndex], i * sizeof(UniformsPerObject));
-    commands->drawIndexed(PrimitiveType::Triangle, 3 * 6 * 2, IndexFormat::UInt16, *ib0_.get(), 0);
+    commands->bindBuffer(1, ubPerObject_[frameIndex].get(), i * sizeof(UniformsPerObject));
+    commands->drawIndexed(3u * 6u * 2u);
   }
   commands->popDebugGroupLabel();
   commands->endEncoding();

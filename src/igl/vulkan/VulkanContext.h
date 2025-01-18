@@ -12,23 +12,27 @@
 #include <memory>
 #include <unordered_map>
 
+#include <igl/CommandEncoder.h>
 #include <igl/HWDevice.h>
 #include <igl/vulkan/Common.h>
 #include <igl/vulkan/VulkanDevice.h>
 #include <igl/vulkan/VulkanExtensions.h>
-#include <igl/vulkan/VulkanFunctions.h>
+#include <igl/vulkan/VulkanFeatures.h>
 #include <igl/vulkan/VulkanHelpers.h>
 #include <igl/vulkan/VulkanImmediateCommands.h>
 #include <igl/vulkan/VulkanQueuePool.h>
 #include <igl/vulkan/VulkanRenderPassBuilder.h>
 #include <igl/vulkan/VulkanStagingDevice.h>
 
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+struct AHardwareBuffer;
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+
 #if defined(IGL_WITH_TRACY_GPU)
 #include "tracy/TracyVulkan.hpp"
 #endif
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 namespace util {
 struct SpvModuleInfo;
 } // namespace util
@@ -38,14 +42,12 @@ class EnhancedShaderDebuggingStore;
 class CommandQueue;
 class ComputeCommandEncoder;
 class RenderCommandEncoder;
-class SyncManager;
 class VulkanBuffer;
 class VulkanDevice;
 class VulkanDescriptorSetLayout;
 class VulkanImage;
 class VulkanImageView;
 class VulkanPipelineLayout;
-class VulkanSampler;
 class VulkanSemaphore;
 class VulkanSwapchain;
 class VulkanTexture;
@@ -53,19 +55,20 @@ class VulkanTexture;
 struct BindingsBuffers;
 struct BindingsTextures;
 struct VulkanContextImpl;
+struct VulkanImageCreateInfo;
+struct VulkanImageViewCreateInfo;
+struct VulkanSampler;
 
 /*
  * Descriptor sets:
  *  0 - combined image samplers
- *  1 - uniform buffers
- *  2 - storage buffers
- *  3 - bindless textures/samplers  <--  optional
+ *  1 - uniform/storage buffers
+ *  2 - bindless textures/samplers  <--  optional
  */
 enum {
   kBindPoint_CombinedImageSamplers = 0,
-  kBindPoint_BuffersUniform = 1,
-  kBindPoint_BuffersStorage = 2,
-  kBindPoint_Bindless = 3,
+  kBindPoint_Buffers = 1,
+  kBindPoint_Bindless = 2,
 };
 
 struct DeviceQueues {
@@ -73,95 +76,96 @@ struct DeviceQueues {
   uint32_t graphicsQueueFamilyIndex = INVALID;
   uint32_t computeQueueFamilyIndex = INVALID;
 
-  VkQueue graphicsQueue = VK_NULL_HANDLE;
-  VkQueue computeQueue = VK_NULL_HANDLE;
+  VkQueue IGL_NULLABLE graphicsQueue = VK_NULL_HANDLE;
+  VkQueue IGL_NULLABLE computeQueue = VK_NULL_HANDLE;
 
   DeviceQueues() = default;
 };
 
-struct VulkanContextConfig {
-  bool terminateOnValidationError = false; // invoke std::terminate() on any validation error
-
-  // enable/disable enhanced shader debugging capabilities (line drawing)
-  bool enhancedShaderDebugging = false;
-
-  bool enableConcurrentVkDevicesSupport = false;
-
-  bool enableValidation = true;
-  bool enableGPUAssistedValidation = true;
-  bool enableSynchronizationValidation = false;
-  bool enableBufferDeviceAddress = false;
-  bool enableExtraLogs = true;
-  bool enableDescriptorIndexing = false;
-
-  igl::ColorSpace swapChainColorSpace = igl::ColorSpace::SRGB_NONLINEAR;
-
-  std::vector<CommandQueueType> userQueues;
-
-  uint32_t maxResourceCount = 3u;
-
-  // owned by the application - should be alive until initContext() returns
-  const void* pipelineCacheData = nullptr;
-  size_t pipelineCacheDataSize = 0;
-
-  // This enables fences generated at the end of submission to be exported to the client.
-  // The client can then use the SubmitHandle to wait for the completion of the GPU work.
-  bool exportableFences = false;
-};
-
 class VulkanContext final {
  public:
-  VulkanContext(const VulkanContextConfig& config,
-                void* window,
+  VulkanContext(VulkanContextConfig config,
+                void* IGL_NULLABLE window,
                 size_t numExtraInstanceExtensions,
-                const char** extraInstanceExtensions,
-                void* display = nullptr);
+                const char* IGL_NULLABLE* IGL_NULLABLE extraInstanceExtensions,
+                void* IGL_NULLABLE display = nullptr);
   ~VulkanContext();
 
   igl::Result queryDevices(const HWDeviceQueryDesc& desc, std::vector<HWDeviceDesc>& outDevices);
   igl::Result initContext(const HWDeviceDesc& desc,
                           size_t numExtraDeviceExtensions = 0,
-                          const char** extraDeviceExtensions = nullptr);
+                          const char* IGL_NULLABLE* IGL_NULLABLE extraDeviceExtensions = nullptr,
+                          const VulkanFeatures* IGL_NULLABLE requestedFeatures = nullptr,
+                          const char* IGL_NULLABLE debugName = nullptr);
 
   igl::Result initSwapchain(uint32_t width, uint32_t height);
   VkExtent2D getSwapchainExtent() const;
 
-  std::shared_ptr<VulkanImage> createImage(VkImageType imageType,
-                                           VkExtent3D extent,
-                                           VkFormat format,
-                                           uint32_t mipLevels,
-                                           uint32_t arrayLayers,
-                                           VkImageTiling tiling,
-                                           VkImageUsageFlags usageFlags,
-                                           VkMemoryPropertyFlags memFlags,
-                                           VkImageCreateFlags flags,
-                                           VkSampleCountFlagBits samples,
-                                           igl::Result* outResult,
-                                           const char* debugName = nullptr) const;
-  std::shared_ptr<VulkanImage> createImageFromFileDescriptor(int32_t fileDescriptor,
-                                                             uint64_t memoryAllocationSize,
-                                                             VkImageType imageType,
-                                                             VkExtent3D extent,
-                                                             VkFormat format,
-                                                             uint32_t mipLevels,
-                                                             uint32_t arrayLayers,
-                                                             VkImageTiling tiling,
-                                                             VkImageUsageFlags usageFlags,
-                                                             VkImageCreateFlags flags,
-                                                             VkSampleCountFlagBits samples,
-                                                             igl::Result* outResult,
-                                                             const char* debugName = nullptr) const;
-  std::shared_ptr<VulkanBuffer> createBuffer(VkDeviceSize bufferSize,
+  VulkanImage createImage(VkImageType imageType,
+                          VkExtent3D extent,
+                          VkFormat format,
+                          uint32_t mipLevels,
+                          uint32_t arrayLayers,
+                          VkImageTiling tiling,
+                          VkImageUsageFlags usageFlags,
+                          VkMemoryPropertyFlags memFlags,
+                          VkImageCreateFlags flags,
+                          VkSampleCountFlagBits samples,
+                          igl::Result* IGL_NULLABLE outResult,
+                          const char* IGL_NULLABLE debugName = nullptr) const;
+
+// @fb-only
+  // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+// @fb-only
+
+  std::unique_ptr<VulkanImage> createImageFromFileDescriptor(
+      int32_t fileDescriptor,
+      uint64_t memoryAllocationSize,
+      VkImageType imageType,
+      VkExtent3D extent,
+      VkFormat format,
+      uint32_t mipLevels,
+      uint32_t arrayLayers,
+      VkImageTiling tiling,
+      VkImageUsageFlags usageFlags,
+      VkImageCreateFlags flags,
+      VkSampleCountFlagBits samples,
+      igl::Result* IGL_NULLABLE outResult,
+      const char* IGL_NULLABLE debugName = nullptr) const;
+  std::unique_ptr<VulkanBuffer> createBuffer(VkDeviceSize bufferSize,
                                              VkBufferUsageFlags usageFlags,
                                              VkMemoryPropertyFlags memFlags,
-                                             igl::Result* outResult,
-                                             const char* debugName = nullptr) const;
-  std::shared_ptr<VulkanTexture> createTexture(std::shared_ptr<VulkanImage> image,
-                                               std::shared_ptr<VulkanImageView> imageView,
-                                               const char* debugName) const;
-  std::shared_ptr<VulkanSampler> createSampler(const VkSamplerCreateInfo& ci,
-                                               igl::Result* outResult,
-                                               const char* debugName = nullptr) const;
+                                             igl::Result* IGL_NULLABLE outResult,
+                                             const char* IGL_NULLABLE debugName = nullptr) const;
+  std::shared_ptr<VulkanTexture> createTexture(VulkanImage&& image,
+                                               VulkanImageView&& imageView,
+                                               const char* IGL_NULLABLE debugName) const;
+  std::shared_ptr<VulkanTexture> createTextureFromVkImage(
+      VkImage vkImage,
+      VulkanImageCreateInfo imageCreateInfo,
+      VulkanImageViewCreateInfo imageViewCreateInfo,
+      const char* IGL_NULLABLE debugName) const;
+
+  SamplerHandle createSampler(const VkSamplerCreateInfo& ci,
+                              VkFormat yuvVkFormat,
+                              igl::Result* IGL_NULLABLE outResult,
+                              const char* IGL_NULLABLE debugName = nullptr) const;
+
+  void createSurface(void* IGL_NULLABLE window, void* IGL_NULLABLE display);
+  void createHeadlessSurface();
 
   bool hasSwapchain() const noexcept {
     return swapchain_ != nullptr;
@@ -170,12 +174,16 @@ class VulkanContext final {
   Result waitIdle() const;
   Result present() const;
 
+  /// @brief Returns the index of the current resource being used.
+  ///        Its range is [0, config.maxResourceCount).
+  [[nodiscard]] uint32_t currentSyncIndex() const noexcept {
+    return syncCurrentIndex_;
+  }
+  void syncAcquireNext() noexcept;
+  void syncMarkSubmitted(VulkanImmediateCommands::SubmitHandle handle) noexcept;
+
   const VkPhysicalDeviceProperties& getVkPhysicalDeviceProperties() const {
     return vkPhysicalDeviceProperties2_.properties;
-  }
-
-  const VkPhysicalDeviceFeatures2& getVkPhysicalDeviceFeatures2() const {
-    return vkPhysicalDeviceFeatures2_;
   }
 
   VkFormat getClosestDepthStencilFormat(igl::TextureFormat desiredFormat) const;
@@ -190,13 +198,13 @@ class VulkanContext final {
   RenderPassHandle getRenderPass(uint8_t index) const;
 
   // OpenXR needs Vulkan instance to find physical device
-  VkInstance getVkInstance() const {
+  VkInstance IGL_NULLABLE getVkInstance() const {
     return vkInstance_;
   }
-  VkDevice getVkDevice() const {
+  VkDevice IGL_NULLABLE getVkDevice() const {
     return device_->getVkDevice();
   }
-  VkPhysicalDevice getVkPhysicalDevice() const {
+  VkPhysicalDevice IGL_NULLABLE getVkPhysicalDevice() const {
     return vkPhysicalDevice_;
   }
   VkDescriptorSetLayout getBindlessVkDescriptorSetLayout() const;
@@ -213,7 +221,20 @@ class VulkanContext final {
 
   bool areValidationLayersEnabled() const;
 
-  void* getVmaAllocator() const;
+  void* IGL_NULLABLE getVmaAllocator() const;
+
+  VkSamplerYcbcrConversionInfo getOrCreateYcbcrConversionInfo(VkFormat format) const;
+
+  void freeResourcesForDescriptorSetLayout(VkDescriptorSetLayout dsl) const;
+
+  const VulkanFeatures& features() const noexcept;
+
+  [[nodiscard]] const VkSurfaceCapabilitiesKHR& getSurfaceCapabilities() const noexcept {
+    return deviceSurfaceCaps_;
+  }
+
+  void ensureCurrentContextThread() const;
+  void setCurrentContextThread();
 
 #if defined(IGL_WITH_TRACY_GPU)
   TracyVkCtx tracyCtx_ = nullptr;
@@ -222,13 +243,28 @@ class VulkanContext final {
 #endif
 
  private:
-  void createInstance(const size_t numExtraExtensions, const char** extraExtensions);
-  void createSurface(void* window, void* display);
-  void checkAndUpdateDescriptorSets();
+  void createInstance(size_t numExtraExtensions,
+                      const char* IGL_NULLABLE* IGL_NULLABLE extraExtensions);
+  VkResult checkAndUpdateDescriptorSets();
+  void pruneTextures();
   void querySurfaceCapabilities();
   void processDeferredTasks() const;
   void waitDeferredTasks();
   void growBindlessDescriptorPool(uint32_t newMaxTextures, uint32_t newMaxSamplers);
+  igl::BindGroupTextureHandle createBindGroup(const BindGroupTextureDesc& desc,
+                                              const IRenderPipelineState* IGL_NULLABLE
+                                                  compatiblePipeline,
+                                              Result* IGL_NULLABLE outResult);
+  igl::BindGroupBufferHandle createBindGroup(const BindGroupBufferDesc& desc,
+                                             Result* IGL_NULLABLE outResult);
+  void destroy(igl::BindGroupTextureHandle handle);
+  void destroy(igl::BindGroupBufferHandle handle);
+  void destroy(igl::SamplerHandle handle);
+  void destroy(igl::TextureHandle handle);
+  VkDescriptorSet getBindGroupDescriptorSet(igl::BindGroupTextureHandle handle) const;
+  VkDescriptorSet getBindGroupDescriptorSet(igl::BindGroupBufferHandle handle) const;
+  uint32_t getBindGroupUsageMask(igl::BindGroupTextureHandle handle) const;
+  uint32_t getBindGroupUsageMask(igl::BindGroupBufferHandle handle) const;
 
  private:
   friend class igl::vulkan::Device;
@@ -241,59 +277,44 @@ class VulkanContext final {
   // should be kept on the heap, otherwise global Vulkan functions can cause arbitrary crashes.
   std::unique_ptr<VulkanFunctionTable> tableImpl_;
 
-  VkInstance vkInstance_ = VK_NULL_HANDLE;
+  VkInstance IGL_NULLABLE vkInstance_ = VK_NULL_HANDLE;
   VkDebugUtilsMessengerEXT vkDebugUtilsMessenger_ = VK_NULL_HANDLE;
   VkSurfaceKHR vkSurface_ = VK_NULL_HANDLE;
-  VkPhysicalDevice vkPhysicalDevice_ = VK_NULL_HANDLE;
-  FOLLY_PUSH_WARNING
-  FOLLY_GNU_DISABLE_WARNING("-Wmissing-field-initializers")
+  VkPhysicalDevice IGL_NULLABLE vkPhysicalDevice_ = VK_NULL_HANDLE;
   VkPhysicalDeviceDescriptorIndexingPropertiesEXT vkPhysicalDeviceDescriptorIndexingProperties_ = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES_EXT,
-      // Ignore clang-diagnostic-missing-field-initializers
-      // @lint-ignore CLANGTIDY
-      nullptr};
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES_EXT,
+      .pNext = nullptr,
+  };
 
   // Provided by VK_KHR_driver_properties
   VkPhysicalDeviceDriverPropertiesKHR vkPhysicalDeviceDriverProperties_ = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR,
-      // Ignore clang-diagnostic-missing-field-initializers
-      // @lint-ignore CLANGTIDY
-      &vkPhysicalDeviceDescriptorIndexingProperties_};
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR,
+      .pNext = &vkPhysicalDeviceDescriptorIndexingProperties_,
+  };
 
   std::vector<VkFormat> deviceDepthFormats_;
   std::vector<VkSurfaceFormatKHR> deviceSurfaceFormats_;
-  VkSurfaceCapabilitiesKHR deviceSurfaceCaps_;
+  VkSurfaceCapabilitiesKHR deviceSurfaceCaps_{};
   std::vector<VkPresentModeKHR> devicePresentModes_;
-
-  // Provided by VK_VERSION_1_2
-  VkPhysicalDeviceShaderFloat16Int8Features vkPhysicalDeviceShaderFloat16Int8Features_ = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR,
-      nullptr};
 
   // Provided by VK_VERSION_1_1
   VkPhysicalDeviceProperties2 vkPhysicalDeviceProperties2_ = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-      &vkPhysicalDeviceDriverProperties_,
-      VkPhysicalDeviceProperties{}};
-  VkPhysicalDeviceMultiviewFeatures vkPhysicalDeviceMultiviewFeatures_ = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
-      &vkPhysicalDeviceShaderFloat16Int8Features_};
-  VkPhysicalDeviceFeatures2 vkPhysicalDeviceFeatures2_ = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-      &vkPhysicalDeviceMultiviewFeatures_};
-  FOLLY_POP_WARNING
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+      .pNext = &vkPhysicalDeviceDriverProperties_,
+  };
+
+  VulkanFeatures features_;
 
  public:
   const VulkanFunctionTable& vf_;
   DeviceQueues deviceQueues_;
-  std::unordered_map<CommandQueueType, VulkanQueueDescriptor> userQueues_;
   std::unique_ptr<igl::vulkan::VulkanDevice> device_;
   std::unique_ptr<igl::vulkan::VulkanSwapchain> swapchain_;
   std::unique_ptr<igl::vulkan::VulkanImmediateCommands> immediate_;
   std::unique_ptr<igl::vulkan::VulkanStagingDevice> stagingDevice_;
 
-  std::shared_ptr<igl::vulkan::VulkanBuffer> dummyUniformBuffer_;
-  std::shared_ptr<igl::vulkan::VulkanBuffer> dummyStorageBuffer_;
+  std::unique_ptr<igl::vulkan::VulkanBuffer> dummyUniformBuffer_;
+  std::unique_ptr<igl::vulkan::VulkanBuffer> dummyStorageBuffer_;
   // don't use staging on devices with device-local host-visible memory
   bool useStagingForBuffers_ = true;
 
@@ -301,24 +322,15 @@ class VulkanContext final {
 
   VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
 
-#if IGL_DEBUG
-  mutable std::vector<std::string> debugNamesTextures_;
-  mutable std::vector<std::string> debugNamesSamplers_;
-#endif // IGL_DEBUG
+  mutable std::unordered_map<VkFormat, VkSamplerYcbcrConversionInfo> ycbcrConversionInfos_;
 
   // 1. Textures can be safely deleted once they are not in use by GPU, hence our Vulkan context
   // owns all allocated textures (images+image views). The IGL interface vulkan::Texture does not
   // delete the underlying VulkanTexture but instead informs the context that it should be
   // deallocated. The context deallocates textures in a deferred way when it is safe to do so.
   // 2. Descriptor sets can be updated when they are not in use.
-  mutable std::vector<std::shared_ptr<VulkanTexture>> textures_ = {nullptr}; // the guard element
-                                                                             // [0] is always there
-  mutable std::vector<std::shared_ptr<VulkanSampler>> samplers_ = {nullptr}; // the guard element
-                                                                             // [0] is always there
-  // contains a list of free indices inside the sparse array `textures_`
-  mutable std::vector<uint32_t> freeIndicesTextures_;
-  // contains a list of free indices inside the sparse array `samplers_`
-  mutable std::vector<uint32_t> freeIndicesSamplers_;
+  mutable Pool<TextureTag, std::shared_ptr<VulkanTexture>> textures_;
+  mutable Pool<SamplerTag, VulkanSampler> samplers_;
   // a texture/sampler was created since the last descriptor set update
   mutable bool awaitingCreation_ = false;
 
@@ -336,25 +348,20 @@ class VulkanContext final {
   // Enhanced shader debug: line drawing
   std::unique_ptr<EnhancedShaderDebuggingStore> enhancedShaderDebuggingStore_;
 
-  void updateBindingsTextures(VkCommandBuffer cmdBuf,
+  void updateBindingsTextures(VkCommandBuffer IGL_NONNULL cmdBuf,
                               VkPipelineLayout layout,
                               VkPipelineBindPoint bindPoint,
+                              VulkanImmediateCommands::SubmitHandle nextSubmitHandle,
                               const BindingsTextures& data,
                               const VulkanDescriptorSetLayout& dsl,
                               const util::SpvModuleInfo& info) const;
-  void updateBindingsUniformBuffers(VkCommandBuffer cmdBuf,
-                                    VkPipelineLayout layout,
-                                    VkPipelineBindPoint bindPoint,
-                                    BindingsBuffers& data,
-                                    const VulkanDescriptorSetLayout& dsl,
-                                    const util::SpvModuleInfo& info) const;
-  void updateBindingsStorageBuffers(VkCommandBuffer cmdBuf,
-                                    VkPipelineLayout layout,
-                                    VkPipelineBindPoint bindPoint,
-                                    BindingsBuffers& data,
-                                    const VulkanDescriptorSetLayout& dsl,
-                                    const util::SpvModuleInfo& info) const;
-  void markSubmitted(const SubmitHandle& handle) const;
+  void updateBindingsBuffers(VkCommandBuffer IGL_NONNULL cmdBuf,
+                             VkPipelineLayout layout,
+                             VkPipelineBindPoint bindPoint,
+                             VulkanImmediateCommands::SubmitHandle nextSubmitHandle,
+                             BindingsBuffers& data,
+                             const VulkanDescriptorSetLayout& dsl,
+                             const util::SpvModuleInfo& info) const;
 
   struct DeferredTask {
     DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle) :
@@ -366,8 +373,9 @@ class VulkanContext final {
 
   mutable std::deque<DeferredTask> deferredTasks_;
 
-  std::unique_ptr<SyncManager> syncManager_;
+  // sync resources
+  uint32_t syncCurrentIndex_ = 0u;
+  std::vector<SubmitHandle> syncSubmitHandles_;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

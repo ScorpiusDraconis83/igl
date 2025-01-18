@@ -12,26 +12,34 @@
 #include <igl/RenderPass.h>
 #include <igl/metal/Buffer.h>
 #include <igl/metal/DepthStencilState.h>
+#include <igl/metal/Device.h>
 #include <igl/metal/Framebuffer.h>
 #include <igl/metal/RenderPipelineState.h>
 #include <igl/metal/SamplerState.h>
 #include <igl/metal/Texture.h>
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 RenderCommandEncoder::RenderCommandEncoder(const std::shared_ptr<CommandBuffer>& commandBuffer) :
-  IRenderCommandEncoder::IRenderCommandEncoder(commandBuffer) {}
+  IRenderCommandEncoder::IRenderCommandEncoder(commandBuffer), device_(commandBuffer->device()) {}
 
 void RenderCommandEncoder::initialize(const std::shared_ptr<CommandBuffer>& commandBuffer,
                                       const RenderPassDesc& renderPass,
                                       const std::shared_ptr<IFramebuffer>& framebuffer,
                                       Result* outResult) {
   Result::setOk(outResult);
-  if (!IGL_VERIFY(framebuffer)) {
+  if (!IGL_DEBUG_VERIFY(framebuffer)) {
     Result::setResult(outResult, Result::Code::ArgumentNull);
     return;
   }
   MTLRenderPassDescriptor* metalRenderPassDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+  if (!metalRenderPassDesc) {
+    static const char* kFailedToCreateRenderPassDesc =
+        "Failed to create Metal render pass descriptor";
+    IGL_DEBUG_ABORT(kFailedToCreateRenderPassDesc);
+    Result::setResult(outResult, Result::Code::RuntimeError, kFailedToCreateRenderPassDesc);
+    return;
+  }
+
   const FramebufferDesc& desc = static_cast<const Framebuffer&>(*framebuffer).get();
 
   // Colors
@@ -45,7 +53,7 @@ void RenderCommandEncoder::initialize(const std::shared_ptr<CommandBuffer>& comm
     if (index >= renderPass.colorAttachments.size() || index >= IGL_COLOR_ATTACHMENTS_MAX) {
       static const char* kNotEnoughRenderPassColorAttachments =
           "Framebuffer color attachment count larger than renderPass color attachment count";
-      IGL_ASSERT_MSG(false, kNotEnoughRenderPassColorAttachments);
+      IGL_DEBUG_ABORT(kNotEnoughRenderPassColorAttachments);
       Result::setResult(
           outResult, Result::Code::ArgumentInvalid, kNotEnoughRenderPassColorAttachments);
       break;
@@ -56,7 +64,7 @@ void RenderCommandEncoder::initialize(const std::shared_ptr<CommandBuffer>& comm
         metalRenderPassDesc.colorAttachments[index];
 
     static const char* kNullColorAttachmentMsg = "Render pass color attachment cannot be null";
-    IGL_ASSERT_MSG(iglTexture, kNullColorAttachmentMsg);
+    IGL_DEBUG_ASSERT(iglTexture, kNullColorAttachmentMsg);
     if (iglTexture) {
       metalColorAttachment.texture = static_cast<Texture&>(*iglTexture).get();
     } else {
@@ -69,7 +77,7 @@ void RenderCommandEncoder::initialize(const std::shared_ptr<CommandBuffer>& comm
       metalColorAttachment.resolveTexture = static_cast<Texture&>(*iglResolveTexture).get();
     }
 
-    auto& iglColorAttachment = renderPass.colorAttachments[index];
+    const auto& iglColorAttachment = renderPass.colorAttachments[index];
     metalColorAttachment.loadAction = convertLoadAction(iglColorAttachment.loadAction);
     metalColorAttachment.storeAction = convertStoreAction(iglColorAttachment.storeAction);
     metalColorAttachment.clearColor = convertClearColor(iglColorAttachment.clearColor);
@@ -136,42 +144,42 @@ void RenderCommandEncoder::endEncoding() {
 
 void RenderCommandEncoder::pushDebugGroupLabel(const char* label,
                                                const igl::Color& /*color*/) const {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT(label != nullptr && *label);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(label != nullptr && *label);
   [encoder_ pushDebugGroup:[NSString stringWithUTF8String:label] ?: @""];
 }
 
 void RenderCommandEncoder::insertDebugEventLabel(const char* label,
                                                  const igl::Color& /*color*/) const {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT(label != nullptr && *label);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(label != nullptr && *label);
   [encoder_ insertDebugSignpost:[NSString stringWithUTF8String:label] ?: @""];
 }
 
 void RenderCommandEncoder::popDebugGroupLabel() const {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
   [encoder_ popDebugGroup];
 }
 
 void RenderCommandEncoder::bindViewport(const Viewport& viewport) {
-  IGL_ASSERT(encoder_);
-  MTLViewport metalViewport = {viewport.x,
-                               viewport.y,
-                               viewport.width,
-                               viewport.height,
-                               viewport.minDepth,
-                               viewport.maxDepth};
+  IGL_DEBUG_ASSERT(encoder_);
+  const MTLViewport metalViewport = {viewport.x,
+                                     viewport.y,
+                                     viewport.width,
+                                     viewport.height,
+                                     viewport.minDepth,
+                                     viewport.maxDepth};
   [encoder_ setViewport:metalViewport];
 }
 
 void RenderCommandEncoder::bindScissorRect(const ScissorRect& rect) {
-  IGL_ASSERT(encoder_);
-  MTLScissorRect scissorRect = {rect.x, rect.y, rect.width, rect.height};
+  IGL_DEBUG_ASSERT(encoder_);
+  const MTLScissorRect scissorRect = {rect.x, rect.y, rect.width, rect.height};
   [encoder_ setScissorRect:scissorRect];
 }
 
 void RenderCommandEncoder::bindCullMode(const CullMode& cullMode) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
   MTLCullMode mode = MTLCullModeNone;
   switch (cullMode) {
   case CullMode::Disabled:
@@ -188,15 +196,15 @@ void RenderCommandEncoder::bindCullMode(const CullMode& cullMode) {
 }
 
 void RenderCommandEncoder::bindFrontFacingWinding(const WindingMode& frontFaceWinding) {
-  IGL_ASSERT(encoder_);
-  MTLWinding mode = (frontFaceWinding == WindingMode::Clockwise) ? MTLWindingClockwise
-                                                                 : MTLWindingCounterClockwise;
+  IGL_DEBUG_ASSERT(encoder_);
+  const MTLWinding mode = (frontFaceWinding == WindingMode::Clockwise) ? MTLWindingClockwise
+                                                                       : MTLWindingCounterClockwise;
 
   [encoder_ setFrontFacingWinding:mode];
 }
 
 void RenderCommandEncoder::bindPolygonFillMode(const PolygonFillMode& polygonFillMode) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
 
   if (polygonFillMode == PolygonFillMode::Fill) {
     return;
@@ -207,8 +215,8 @@ void RenderCommandEncoder::bindPolygonFillMode(const PolygonFillMode& polygonFil
 
 void RenderCommandEncoder::bindRenderPipelineState(
     const std::shared_ptr<IRenderPipelineState>& pipelineState) {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT(pipelineState);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(pipelineState);
   if (!pipelineState) {
     return;
   }
@@ -219,64 +227,78 @@ void RenderCommandEncoder::bindRenderPipelineState(
   bindCullMode(metalPipelineState.getCullMode());
   bindFrontFacingWinding(metalPipelineState.getWindingMode());
   bindPolygonFillMode(metalPipelineState.getPolygonFillMode());
+
+  metalPrimitive_ = convertPrimitiveType(pipelineState->getRenderPipelineDesc().topology);
 }
 
 void RenderCommandEncoder::bindDepthStencilState(
     const std::shared_ptr<IDepthStencilState>& depthStencilState) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
   if (depthStencilState) {
     [encoder_ setDepthStencilState:static_cast<DepthStencilState&>(*depthStencilState).get()];
   }
 }
 
-void RenderCommandEncoder::setBlendColor(Color color) {
+void RenderCommandEncoder::setBlendColor(const Color& color) {
+  IGL_DEBUG_ASSERT(encoder_);
   [encoder_ setBlendColorRed:color.r green:color.g blue:color.b alpha:color.a];
 }
 
 void RenderCommandEncoder::setDepthBias(float depthBias, float slopeScale, float clamp) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
   [encoder_ setDepthBias:depthBias slopeScale:slopeScale clamp:clamp];
 }
 
 void RenderCommandEncoder::setStencilReferenceValue(uint32_t value) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
   [encoder_ setStencilReferenceValue:value];
 }
 
-void RenderCommandEncoder::setStencilReferenceValues(uint32_t frontValue, uint32_t backValue) {
-  IGL_ASSERT(encoder_);
-  [encoder_ setStencilFrontReferenceValue:frontValue backReferenceValue:backValue];
-}
+void RenderCommandEncoder::bindBuffer(uint32_t index,
+                                      IBuffer* buffer,
+                                      size_t offset,
+                                      size_t bufferSize) {
+  (void)bufferSize;
 
-void RenderCommandEncoder::bindBuffer(int index,
-                                      uint8_t bindTarget,
-                                      const std::shared_ptr<IBuffer>& buffer,
-                                      size_t offset) {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT_MSG(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
-                     bindTarget == BindTarget::kAllGraphics,
-                 "Bind target is not valid: %d",
-                 bindTarget);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(index < IGL_BUFFER_BINDINGS_MAX);
+
   if (buffer) {
     auto& metalBuffer = static_cast<Buffer&>(*buffer);
-    if ((bindTarget & BindTarget::kVertex) != 0) {
-      [encoder_ setVertexBuffer:metalBuffer.get() offset:offset atIndex:index];
-    }
-    if ((bindTarget & BindTarget::kFragment) != 0) {
-      [encoder_ setFragmentBuffer:metalBuffer.get() offset:offset atIndex:index];
-    }
+    [encoder_ setVertexBuffer:metalBuffer.get() offset:offset atIndex:index];
+    [encoder_ setFragmentBuffer:metalBuffer.get() offset:offset atIndex:index];
+  } else {
+    [encoder_ setVertexBuffer:nil offset:0 atIndex:index];
+    [encoder_ setFragmentBuffer:nil offset:0 atIndex:index];
   }
+}
+
+void RenderCommandEncoder::bindVertexBuffer(uint32_t index, IBuffer& buffer, size_t bufferOffset) {
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(index < IGL_BUFFER_BINDINGS_MAX);
+
+  auto& metalBuffer = static_cast<Buffer&>(buffer);
+  [encoder_ setVertexBuffer:metalBuffer.get() offset:bufferOffset atIndex:index];
+}
+
+void RenderCommandEncoder::bindIndexBuffer(IBuffer& buffer,
+                                           IndexFormat format,
+                                           size_t bufferOffset) {
+  auto& metalBuffer = static_cast<Buffer&>(buffer);
+  indexBuffer_ = metalBuffer.get();
+  indexType_ = convertIndexType(format);
+  indexBufferOffset_ = bufferOffset;
 }
 
 void RenderCommandEncoder::bindBytes(size_t index,
                                      uint8_t bindTarget,
                                      const void* data,
                                      size_t length) {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT_MSG(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
-                     bindTarget == BindTarget::kAllGraphics,
-                 "Bind target is not valid: %d",
-                 bindTarget);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
+                       bindTarget == BindTarget::kAllGraphics,
+                   "Bind target is not valid: %d",
+                   bindTarget);
   if (data) {
     if (length > MAX_RECOMMENDED_BYTES) {
       IGL_LOG_INFO(
@@ -295,15 +317,15 @@ void RenderCommandEncoder::bindBytes(size_t index,
 void RenderCommandEncoder::bindPushConstants(const void* /*data*/,
                                              size_t /*length*/,
                                              size_t /*offset*/) {
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
 void RenderCommandEncoder::bindTexture(size_t index, uint8_t bindTarget, ITexture* texture) {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT_MSG(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
-                     bindTarget == BindTarget::kAllGraphics,
-                 "Bind target is not valid: %d",
-                 bindTarget);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
+                       bindTarget == BindTarget::kAllGraphics,
+                   "Bind target is not valid: %d",
+                   bindTarget);
 
   auto* iglTexture = static_cast<Texture*>(texture);
   auto metalTexture = iglTexture ? iglTexture->get() : nil;
@@ -316,156 +338,137 @@ void RenderCommandEncoder::bindTexture(size_t index, uint8_t bindTarget, ITextur
   }
 }
 
+void RenderCommandEncoder::bindTexture(size_t index, ITexture* texture) {
+  bindTexture(index, igl::BindTarget::kFragment, texture);
+}
+
 void RenderCommandEncoder::bindUniform(const UniformDesc& /*uniformDesc*/, const void* /*data*/) {
   // DO NOT IMPLEMENT!
   // This is only for backends that MUST use single uniforms in some situations.
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
 void RenderCommandEncoder::bindSamplerState(size_t index,
                                             uint8_t bindTarget,
                                             ISamplerState* samplerState) {
-  IGL_ASSERT(encoder_);
-  IGL_ASSERT_MSG(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
-                     bindTarget == BindTarget::kAllGraphics,
-                 "Bind target is not valid: %d",
-                 bindTarget);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(bindTarget == BindTarget::kVertex || bindTarget == BindTarget::kFragment ||
+                       bindTarget == BindTarget::kAllGraphics,
+                   "Bind target is not valid: %d",
+                   bindTarget);
 
-  auto* metalSamplerState = static_cast<SamplerState*>(samplerState);
+  auto* iglSamplerState = static_cast<SamplerState*>(samplerState);
+  auto metalSamplerState = iglSamplerState ? iglSamplerState->get() : nil;
 
   if ((bindTarget & BindTarget::kVertex) != 0) {
-    [encoder_ setVertexSamplerState:metalSamplerState->get() atIndex:index];
+    [encoder_ setVertexSamplerState:metalSamplerState atIndex:index];
   }
   if ((bindTarget & BindTarget::kFragment) != 0) {
-    [encoder_ setFragmentSamplerState:metalSamplerState->get() atIndex:index];
+    [encoder_ setFragmentSamplerState:metalSamplerState atIndex:index];
   }
 }
 
-void RenderCommandEncoder::draw(PrimitiveType primitiveType,
-                                size_t vertexStart,
-                                size_t vertexCount,
+void RenderCommandEncoder::draw(size_t vertexCount,
                                 uint32_t instanceCount,
+                                uint32_t firstVertex,
                                 uint32_t baseInstance) {
   getCommandBuffer().incrementCurrentDrawCount();
-  IGL_ASSERT(encoder_);
-  MTLPrimitiveType metalPrimitive = convertPrimitiveType(primitiveType);
+  IGL_DEBUG_ASSERT(encoder_);
 #if IGL_PLATFORM_IOS
   if (@available(iOS 16, *)) {
 #endif // IGL_PLATFORM_IOS
-    [encoder_ drawPrimitives:metalPrimitive
-                 vertexStart:vertexStart
+    [encoder_ drawPrimitives:metalPrimitive_
+                 vertexStart:firstVertex
                  vertexCount:vertexCount
                instanceCount:instanceCount
                 baseInstance:baseInstance];
 #if IGL_PLATFORM_IOS
   } else {
-    [encoder_ drawPrimitives:metalPrimitive vertexStart:vertexStart vertexCount:vertexCount];
+    [encoder_ drawPrimitives:metalPrimitive_ vertexStart:firstVertex vertexCount:vertexCount];
   }
 #endif // IGL_PLATFORM_IOS
 }
 
-void RenderCommandEncoder::drawIndexed(PrimitiveType primitiveType,
-                                       size_t indexCount,
-                                       IndexFormat indexFormat,
-                                       IBuffer& indexBuffer,
-                                       size_t indexBufferOffset,
+void RenderCommandEncoder::drawIndexed(size_t indexCount,
                                        uint32_t instanceCount,
-                                       int32_t baseVertex,
+                                       uint32_t firstIndex,
+                                       int32_t vertexOffset,
                                        uint32_t baseInstance) {
   getCommandBuffer().incrementCurrentDrawCount();
-  IGL_ASSERT(encoder_);
-  auto& buffer = (Buffer&)(indexBuffer);
-  MTLPrimitiveType metalPrimitive = convertPrimitiveType(primitiveType);
-  MTLIndexType indexType = convertIndexType(indexFormat);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(indexBuffer_, "No index buffer bound");
+  if (!IGL_DEBUG_VERIFY(encoder_ && indexBuffer_)) {
+    return;
+  }
+
+  const size_t indexOffsetBytes =
+      static_cast<size_t>(firstIndex) * (indexType_ == MTLIndexTypeUInt32 ? 4u : 2u);
 
 #if IGL_PLATFORM_IOS
   if (@available(iOS 16, *)) {
 #endif // IGL_PLATFORM_IOS
-    [encoder_ drawIndexedPrimitives:metalPrimitive
+    [encoder_ drawIndexedPrimitives:metalPrimitive_
                          indexCount:indexCount
-                          indexType:indexType
-                        indexBuffer:buffer.get()
-                  indexBufferOffset:indexBufferOffset
+                          indexType:indexType_
+                        indexBuffer:indexBuffer_
+                  indexBufferOffset:indexBufferOffset_ + indexOffsetBytes
                       instanceCount:instanceCount
-                         baseVertex:baseVertex
+                         baseVertex:vertexOffset
                        baseInstance:baseInstance];
 #if IGL_PLATFORM_IOS
   } else {
-    [encoder_ drawIndexedPrimitives:metalPrimitive
+    [encoder_ drawIndexedPrimitives:metalPrimitive_
                          indexCount:indexCount
-                          indexType:indexType
-                        indexBuffer:buffer.get()
-                  indexBufferOffset:indexBufferOffset];
+                          indexType:indexType_
+                        indexBuffer:indexBuffer_
+                  indexBufferOffset:indexBufferOffset_ + indexOffsetBytes];
   }
 #endif // IGL_PLATFORM_IOS
 }
 
-void RenderCommandEncoder::drawIndexedIndirect(PrimitiveType primitiveType,
-                                               IndexFormat indexFormat,
-                                               IBuffer& indexBuffer,
-                                               IBuffer& indirectBuffer,
-                                               size_t indirectBufferOffset) {
-  getCommandBuffer().incrementCurrentDrawCount();
-  IGL_ASSERT(encoder_);
-  auto& indexBufferRef = (Buffer&)(indexBuffer);
-  auto& indirectBufferRef = (Buffer&)(indirectBuffer);
-  MTLPrimitiveType metalPrimitive = convertPrimitiveType(primitiveType);
-  MTLIndexType indexType = convertIndexType(indexFormat);
-
-  [encoder_ drawIndexedPrimitives:metalPrimitive
-                        indexType:indexType
-                      indexBuffer:indexBufferRef.get()
-                indexBufferOffset:0
-                   indirectBuffer:indirectBufferRef.get()
-             indirectBufferOffset:indirectBufferOffset];
-}
-
-void RenderCommandEncoder::multiDrawIndirect(PrimitiveType primitiveType,
-                                             IBuffer& indirectBuffer,
+void RenderCommandEncoder::multiDrawIndirect(IBuffer& indirectBuffer,
                                              // Ignore bugprone-easily-swappable-parameters
                                              // @lint-ignore CLANGTIDY
                                              size_t indirectBufferOffset,
                                              uint32_t drawCount,
                                              uint32_t stride) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
   stride = stride ? stride : sizeof(MTLDrawPrimitivesIndirectArguments);
   auto& indirectBufferRef = (Buffer&)(indirectBuffer);
-  MTLPrimitiveType metalPrimitive = convertPrimitiveType(primitiveType);
 
   for (uint32_t drawIndex = 0; drawIndex < drawCount; drawIndex++) {
     getCommandBuffer().incrementCurrentDrawCount();
-    [encoder_ drawPrimitives:metalPrimitive
+    [encoder_ drawPrimitives:metalPrimitive_
               indirectBuffer:indirectBufferRef.get()
         indirectBufferOffset:indirectBufferOffset + static_cast<size_t>(stride) * drawIndex];
   }
 }
 
-void RenderCommandEncoder::multiDrawIndexedIndirect(PrimitiveType primitiveType,
-                                                    IndexFormat indexFormat,
-                                                    // Ignore bugprone-easily-swappable-parameters
-                                                    // @lint-ignore CLANGTIDY
-                                                    IBuffer& indexBuffer,
-                                                    IBuffer& indirectBuffer,
+void RenderCommandEncoder::multiDrawIndexedIndirect(IBuffer& indirectBuffer,
                                                     // Ignore bugprone-easily-swappable-parameters
                                                     // @lint-ignore CLANGTIDY
                                                     size_t indirectBufferOffset,
                                                     uint32_t drawCount,
                                                     uint32_t stride) {
-  IGL_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(encoder_);
+  IGL_DEBUG_ASSERT(indexBuffer_, "No index buffer bound");
+  if (!IGL_DEBUG_VERIFY(encoder_ && indexBuffer_)) {
+    return;
+  }
   stride = stride ? stride : sizeof(MTLDrawIndexedPrimitivesIndirectArguments);
-  auto& indexBufferRef = (Buffer&)(indexBuffer);
   auto& indirectBufferRef = (Buffer&)(indirectBuffer);
-  MTLPrimitiveType metalPrimitive = convertPrimitiveType(primitiveType);
-  MTLIndexType indexType = convertIndexType(indexFormat);
 
   for (uint32_t drawIndex = 0; drawIndex < drawCount; drawIndex++) {
     getCommandBuffer().incrementCurrentDrawCount();
-    [encoder_ drawIndexedPrimitives:metalPrimitive
-                          indexType:indexType
-                        indexBuffer:indexBufferRef.get()
-                  indexBufferOffset:0
+    [encoder_ drawIndexedPrimitives:metalPrimitive_
+                          indexType:indexType_
+                        indexBuffer:indexBuffer_
+                  indexBufferOffset:indexBufferOffset_
                      indirectBuffer:indirectBufferRef.get()
-               indirectBufferOffset:indirectBufferOffset + static_cast<size_t>(stride) * drawIndex];
+               indirectBufferOffset:indirectBufferOffset +
+                                    (stride ? static_cast<size_t>(stride)
+                                            : sizeof(MTLDrawIndexedPrimitivesIndirectArguments)) *
+                                        drawIndex];
   }
 }
 
@@ -486,6 +489,9 @@ MTLPrimitiveType RenderCommandEncoder::convertPrimitiveType(PrimitiveType value)
 
 MTLIndexType RenderCommandEncoder::convertIndexType(IndexFormat value) {
   switch (value) {
+  case IndexFormat::UInt8:
+    IGL_DEBUG_ASSERT(false, "8-bit indices are not supported in Metal");
+    [[fallthrough]];
   case IndexFormat::UInt16:
     return MTLIndexTypeUInt16;
   case IndexFormat::UInt32:
@@ -519,5 +525,49 @@ MTLClearColor RenderCommandEncoder::convertClearColor(Color value) {
   return MTLClearColorMake(value.r, value.g, value.b, value.a);
 }
 
-} // namespace metal
-} // namespace igl
+void RenderCommandEncoder::bindBindGroup(BindGroupTextureHandle handle) {
+  if (handle.empty()) {
+    return;
+  }
+
+  const BindGroupTextureDesc* desc = device_.bindGroupTexturesPool_.get(handle);
+
+  for (uint32_t i = 0; i != IGL_TEXTURE_SAMPLERS_MAX; i++) {
+    if (desc->textures[i]) {
+      IGL_DEBUG_ASSERT(desc->samplers[i]);
+      bindTexture(i, BindTarget::kAllGraphics, desc->textures[i].get());
+      bindSamplerState(i, BindTarget::kAllGraphics, desc->samplers[i].get());
+    }
+  }
+}
+
+void RenderCommandEncoder::bindBindGroup(BindGroupBufferHandle handle,
+                                         uint32_t numDynamicOffsets,
+                                         const uint32_t* dynamicOffsets) {
+  if (handle.empty()) {
+    return;
+  }
+
+  const BindGroupBufferDesc* desc = device_.bindGroupBuffersPool_.get(handle);
+
+  uint32_t dynamicOffset = 0;
+
+  for (uint32_t i = 0; i != IGL_UNIFORM_BLOCKS_BINDING_MAX; i++) {
+    if (desc->buffers[i]) {
+      if (desc->isDynamicBufferMask & (1 << i)) {
+        IGL_DEBUG_ASSERT(dynamicOffsets, "No dynamic offsets provided");
+        IGL_DEBUG_ASSERT(dynamicOffset < numDynamicOffsets, "Not enough dynamic offsets provided");
+        bindBuffer(i,
+                   desc->buffers[i].get(),
+                   desc->offset[i] + dynamicOffsets[dynamicOffset++],
+                   desc->size[i]);
+      } else {
+        bindBuffer(i, desc->buffers[i].get(), desc->offset[i], desc->size[i]);
+      }
+    }
+  }
+
+  IGL_DEBUG_ASSERT(dynamicOffset == numDynamicOffsets, "Not all dynamic offsets were consumed");
+}
+
+} // namespace igl::metal

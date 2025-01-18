@@ -28,11 +28,11 @@
   #include "OpenGLES/ES3/glext.h"
   #include "OpenGLES/ES2/glext.h"
   using GLdouble = double;
-#elif IGL_PLATFORM_MACOS
+#elif IGL_PLATFORM_MACOSX
   #include <OpenGL/gl3.h>
   #include <OpenGL/gl3ext.h>
   #include <OpenGL/glext.h>
-#elif IGL_PLATFORM_WIN
+#elif IGL_PLATFORM_WINDOWS
   #define GL_GLEXT_PROTOTYPES
 #if IGL_ANGLE
   #include <EGL/egl.h>
@@ -532,6 +532,9 @@
 #ifndef GL_NUM_EXTENSIONS
 #define GL_NUM_EXTENSIONS 0x821d
 #endif
+#ifndef GL_PACK_ROW_LENGTH
+#define GL_PACK_ROW_LENGTH 0x0d02
+#endif
 #ifndef GL_PIXEL_PACK_BUFFER
 #define GL_PIXEL_PACK_BUFFER 0x88eb
 #endif
@@ -585,6 +588,9 @@
 #endif
 #ifndef GL_RG16F
 #define GL_RG16F 0x822F
+#endif
+#ifndef GL_RG32F
+#define GL_RG32F 0x8230
 #endif
 #ifndef GL_RG8
 #define GL_RG8 0x822B

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include "Common.h"
 
 #include <emscripten/html5.h>
@@ -20,5 +22,5 @@ void getRenderingBufferSize(int& width, int& height) {
   width = cssWidth * devicePixelRatio;
   height = cssHeight * devicePixelRatio;
 
-  IGL_ASSERT_MSG(width > 0 && height > 0, "zero or negative size");
+  IGL_DEBUG_ASSERT(width > 0 && height > 0, "zero or negative size");
 }

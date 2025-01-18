@@ -9,8 +9,7 @@
 
 #include <igl/opengl/Errors.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 TextureTarget::~TextureTarget() {
   if (renderBufferID_ != 0) {
@@ -88,11 +87,11 @@ void TextureTarget::unbind() {
 }
 
 void TextureTarget::bindImage(size_t /*unit*/) {
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 }
 
 void TextureTarget::attachAsColor(uint32_t index, const AttachmentParams& params) {
-  if (IGL_VERIFY(renderBufferID_)) {
+  if (IGL_DEBUG_VERIFY(renderBufferID_)) {
     attach(GL_COLOR_ATTACHMENT0 + index, params, renderBufferID_);
   }
 }
@@ -100,10 +99,10 @@ void TextureTarget::attachAsColor(uint32_t index, const AttachmentParams& params
 void TextureTarget::attach(GLenum attachment,
                            const AttachmentParams& params,
                            GLuint renderBufferId) {
-  IGL_ASSERT(params.stereo == false);
-  IGL_ASSERT(params.face == 0);
-  IGL_ASSERT(params.layer == 0);
-  IGL_ASSERT(params.mipLevel == 0);
+  IGL_DEBUG_ASSERT(params.stereo == false);
+  IGL_DEBUG_ASSERT(params.face == 0);
+  IGL_DEBUG_ASSERT(params.layer == 0);
+  IGL_DEBUG_ASSERT(params.mipLevel == 0);
 
   GLenum framebufferTarget = GL_FRAMEBUFFER;
   if (getContext().deviceFeatures().hasFeature(DeviceFeatures::ReadWriteFramebuffer)) {
@@ -125,7 +124,7 @@ void TextureTarget::detachAsColor(uint32_t index, bool read) {
 }
 
 void TextureTarget::attachAsDepth(const AttachmentParams& params) {
-  if (IGL_VERIFY(renderBufferID_)) {
+  if (IGL_DEBUG_VERIFY(renderBufferID_)) {
     attach(GL_DEPTH_ATTACHMENT, params, renderBufferID_);
   }
 }
@@ -137,7 +136,7 @@ void TextureTarget::detachAsDepth(bool read) {
 }
 
 void TextureTarget::attachAsStencil(const AttachmentParams& params) {
-  if (IGL_VERIFY(renderBufferID_)) {
+  if (IGL_DEBUG_VERIFY(renderBufferID_)) {
     attach(GL_STENCIL_ATTACHMENT, params, renderBufferID_);
   }
 }
@@ -158,5 +157,4 @@ bool TextureTarget::toRenderBufferFormatGL(TextureDesc::TextureUsage usage,
   return true;
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

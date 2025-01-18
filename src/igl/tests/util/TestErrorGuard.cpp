@@ -14,28 +14,26 @@
 #include <string>
 
 igl::tests::util::TestErrorGuard::TestErrorGuard() {
-#if IGL_REPORT_ERROR_ENABLED
-  savedErrorHandler_ = IGLReportErrorGetHandler();
-  IGLReportErrorSetHandler(ReportErrorHandler);
+#if IGL_SOFT_ERROR_ENABLED
+  savedErrorHandler_ = IGLGetSoftErrorHandler();
+  IGLSetSoftErrorHandler(ReportErrorHandler);
 #endif
 }
 
 igl::tests::util::TestErrorGuard::~TestErrorGuard() {
-#if IGL_REPORT_ERROR_ENABLED
-  IGLReportErrorSetHandler(savedErrorHandler_);
+#if IGL_SOFT_ERROR_ENABLED
+  IGLSetSoftErrorHandler(savedErrorHandler_);
 #endif
 }
 
-void igl::tests::util::TestErrorGuard::ReportErrorHandler(const char* file,
+void igl::tests::util::TestErrorGuard::ReportErrorHandler(const char* category,
+                                                          const char* /*reason*/,
+                                                          const char* file,
                                                           const char* /*func*/,
                                                           int line,
-                                                          const char* category,
                                                           const char* format,
-                                                          ...) {
-#if IGL_REPORT_ERROR_ENABLED
-  va_list ap;
-  va_start(ap, format);
-
+                                                          va_list ap) {
+#if IGL_SOFT_ERROR_ENABLED
   va_list apCopy;
   va_copy(apCopy, ap);
   const auto len = std::vsnprintf(nullptr, 0, format, apCopy);
@@ -45,7 +43,6 @@ void igl::tests::util::TestErrorGuard::ReportErrorHandler(const char* file,
   fmtString.resize(len + 1);
   std::vsnprintf(&fmtString.front(), len + 1, format, ap);
   fmtString.resize(len);
-  va_end(ap);
 
   ADD_FAILURE() << "IGL error encountered in " << file << ":" << line << " category=" << category
                 << " " << fmtString;

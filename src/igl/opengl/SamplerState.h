@@ -11,9 +11,7 @@
 #include <igl/opengl/GLIncludes.h>
 #include <igl/opengl/IContext.h>
 
-namespace igl {
-class ITexture;
-namespace opengl {
+namespace igl::opengl {
 
 class SamplerState final : public WithContext, public ISamplerState {
  public:
@@ -28,12 +26,18 @@ class SamplerState final : public WithContext, public ISamplerState {
   static SamplerMinMagFilter convertGLMinFilter(GLint minFilter);
   static SamplerMipFilter convertGLMipFilter(GLint minFilter);
 
+  /**
+   * @brief Returns true if this sampler is a YUV sampler.
+   */
+  [[nodiscard]] bool isYUV() const noexcept override;
+
  private:
   size_t hash_ = std::numeric_limits<size_t>::max();
   GLint minMipFilter_;
   GLint magFilter_;
   GLfloat mipLodMin_;
   GLfloat mipLodMax_;
+  GLfloat maxAnisotropy_;
 
   GLint addressU_;
   GLint addressV_;
@@ -41,7 +45,7 @@ class SamplerState final : public WithContext, public ISamplerState {
 
   GLint depthCompareFunction_;
   bool depthCompareEnabled_;
+  bool isYUV_;
 };
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

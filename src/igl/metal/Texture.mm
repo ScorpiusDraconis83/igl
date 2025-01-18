@@ -22,8 +22,7 @@ void bgrToRgb(unsigned char* dstImg, size_t width, size_t height, size_t bytesPe
 }
 } // namespace
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 
 Texture::Texture(id<MTLTexture> texture, const ICapabilities& capabilities) :
   ITexture(mtlPixelFormatToTextureFormat([texture pixelFormat])),
@@ -105,7 +104,7 @@ Result Texture::uploadInternal(TextureType type,
         break;
       }
       default:
-        IGL_ASSERT(false && "Unknown texture type");
+        IGL_DEBUG_ABORT("Unknown texture type");
         break;
       }
     }
@@ -132,11 +131,11 @@ Result Texture::getBytes(const TextureRangeDesc& range, void* outData, size_t by
   }
 
   const size_t bytesPerImage = properties.getBytesPerRange(range);
-  MTLRegion region = {{range.x, range.y, 0}, {range.width, range.height, 1}};
+  const MTLRegion region = {{range.x, range.y, 0}, {range.width, range.height, 1}};
   auto tmpBuffer = std::make_unique<uint8_t[]>(bytesPerImage);
 
   [get() getBytes:tmpBuffer.get()
-        bytesPerRow:toMetalBytesPerRow(bytesPerRow)
+        bytesPerRow:toMetalBytesPerRow(properties.getBytesPerRow(range))
       bytesPerImage:bytesPerImage
          fromRegion:region
         mipmapLevel:range.mipLevel
@@ -144,10 +143,11 @@ Result Texture::getBytes(const TextureRangeDesc& range, void* outData, size_t by
 
   /// Metal textures are up-side down compared to OGL textures. IGL follows
   /// the OGL convention and this function flips the texture vertically
-  repackData(properties, range, tmpBuffer.get(), 0, static_cast<uint8_t*>(outData), 0, true);
+  repackData(
+      properties, range, tmpBuffer.get(), 0, static_cast<uint8_t*>(outData), bytesPerRow, true);
 
-  igl::TextureFormat f = getFormat();
-  TextureFormatProperties props = TextureFormatProperties::fromTextureFormat(f);
+  const igl::TextureFormat f = getFormat();
+  const TextureFormatProperties props = TextureFormatProperties::fromTextureFormat(f);
   auto bytesPerPixel = props.bytesPerBlock;
   if (f == TextureFormat::BGRA_SRGB || f == TextureFormat::BGRA_UNorm8) {
     bgrToRgb(static_cast<unsigned char*>(outData), range.width, range.height, bytesPerPixel);
@@ -169,10 +169,12 @@ size_t Texture::toMetalBytesPerRow(size_t bytesPerRow) const {
 
 Dimensions Texture::getDimensions() const {
   auto texture = get();
-  return Dimensions{[texture width], [texture height], [texture depth]};
+  return Dimensions{static_cast<uint32_t>([texture width]),
+                    static_cast<uint32_t>([texture height]),
+                    static_cast<uint32_t>([texture depth])};
 }
 
-size_t Texture::getNumLayers() const {
+uint32_t Texture::getNumLayers() const {
   return [get() arrayLength];
 }
 
@@ -192,7 +194,11 @@ uint32_t Texture::getNumMipLevels() const {
   return [get() mipmapLevelCount];
 }
 
-void Texture::generateMipmap(ICommandQueue& cmdQueue) const {
+void Texture::generateMipmap(ICommandQueue& cmdQueue, const TextureRangeDesc* range) const {
+  if (range) {
+    IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
+  }
+
   if (value_.mipmapLevelCount > 1) {
     auto mtlCmdQueue = static_cast<CommandQueue&>(cmdQueue).get();
 
@@ -204,7 +210,11 @@ void Texture::generateMipmap(ICommandQueue& cmdQueue) const {
   }
 }
 
-void Texture::generateMipmap(ICommandBuffer& cmdBuffer) const {
+void Texture::generateMipmap(ICommandBuffer& cmdBuffer, const TextureRangeDesc* range) const {
+  if (range) {
+    IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
+  }
+
   if (value_.mipmapLevelCount > 1) {
     auto mtlCmdBuffer = static_cast<CommandBuffer&>(cmdBuffer).get();
     generateMipmap(mtlCmdBuffer);
@@ -217,7 +227,7 @@ void Texture::generateMipmap(id<MTLCommandBuffer> cmdBuffer) const {
                              ICapabilities::TextureFormatCapabilityBits::SampledFiltered) != 0;
   if (!isFilterable) {
     // TODO: implement manual mip generation for required formats (e.g. RGBA32Float)
-    IGL_ASSERT_NOT_IMPLEMENTED();
+    IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
     return;
   }
 
@@ -232,7 +242,7 @@ bool Texture::isRequiredGenerateMipmap() const {
 
 uint64_t Texture::getTextureId() const {
   // TODO: implement via gpuResourceID
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
   return 0;
 }
 
@@ -257,7 +267,7 @@ MTLTextureUsage Texture::toMTLTextureUsage(TextureDesc::TextureUsage usage) {
 }
 
 MTLTextureType Texture::convertType(TextureType value, size_t numSamples) {
-  IGL_ASSERT(value != TextureType::Invalid && value != TextureType::ExternalImage);
+  IGL_DEBUG_ASSERT(value != TextureType::Invalid && value != TextureType::ExternalImage);
 
   switch (value) {
   case TextureType::ExternalImage:
@@ -311,19 +321,19 @@ MTLPixelFormat Texture::textureFormatToMTLPixelFormat(TextureFormat value) {
     return MTLPixelFormatA8Unorm;
     // 16 bpp
   case TextureFormat::B5G5R5A1_UNorm:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatBGR5A1Unorm;
 #endif
   case TextureFormat::B5G6R5_UNorm:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST || IGL_PLATFORM_IOS_SIMULATOR
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_IOS_SIMULATOR
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatB5G6R5Unorm;
 #endif
   case TextureFormat::ABGR_UNorm4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST || IGL_PLATFORM_IOS_SIMULATOR
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_IOS_SIMULATOR
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatABGR4Unorm;
@@ -371,6 +381,9 @@ MTLPixelFormat Texture::textureFormatToMTLPixelFormat(TextureFormat value) {
   case TextureFormat::R_F32:
     return MTLPixelFormatR32Float;
 
+  case TextureFormat::RG_F32:
+    return MTLPixelFormatRG32Float;
+
   // 96 bit
   case TextureFormat::RGB_F32:
     return MTLPixelFormatInvalid;
@@ -395,224 +408,224 @@ MTLPixelFormat Texture::textureFormatToMTLPixelFormat(TextureFormat value) {
 
     // Compressed
   case TextureFormat::RGBA_ASTC_4x4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_4x4_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_4x4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_4x4_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_5x4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_5x4_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_5x4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_5x4_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_5x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_5x5_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_5x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_5x5_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_6x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_6x5_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_6x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_6x5_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_6x6:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_6x6_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_6x6:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_6x6_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_8x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_8x5_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_8x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_8x5_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_8x6:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_8x6_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_8x6:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_8x6_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_8x8:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_8x8_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_8x8:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_8x8_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_10x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x5_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_10x5:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x5_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_10x6:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x6_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_10x6:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x6_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_10x8:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x8_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_10x8:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x8_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_10x10:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x10_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_10x10:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_10x10_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_12x10:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_12x10_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_12x10:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_12x10_sRGB;
 #endif
 
   case TextureFormat::RGBA_ASTC_12x12:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_12x12_LDR;
 #endif
 
   case TextureFormat::SRGB8_A8_ASTC_12x12:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatASTC_12x12_sRGB;
 #endif
 
   case TextureFormat::RGBA_PVRTC_2BPPV1:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatPVRTC_RGBA_2BPP;
 #endif
 
   case TextureFormat::RGB_PVRTC_2BPPV1:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatPVRTC_RGB_2BPP;
 #endif
 
   case TextureFormat::RGBA_PVRTC_4BPPV1:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatPVRTC_RGBA_4BPP;
 #endif
 
   case TextureFormat::RGB_PVRTC_4BPPV1:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatPVRTC_RGB_4BPP;
@@ -620,56 +633,56 @@ MTLPixelFormat Texture::textureFormatToMTLPixelFormat(TextureFormat value) {
 
   case TextureFormat::RGB8_ETC1:
   case TextureFormat::RGB8_ETC2:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatETC2_RGB8;
 #endif
 
   case TextureFormat::RGBA8_EAC_ETC2:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatEAC_RGBA8;
 #endif
 
   case TextureFormat::SRGB8_ETC2:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatETC2_RGB8_sRGB;
 #endif
 
   case TextureFormat::SRGB8_A8_EAC_ETC2:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatEAC_RGBA8_sRGB;
 #endif
 
   case TextureFormat::RG_EAC_UNorm:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatEAC_RG11Unorm;
 #endif
 
   case TextureFormat::RG_EAC_SNorm:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatEAC_RG11Snorm;
 #endif
 
   case TextureFormat::R_EAC_UNorm:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatEAC_R11Unorm;
 #endif
 
   case TextureFormat::R_EAC_SNorm:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
     return MTLPixelFormatInvalid;
 #else
     return MTLPixelFormatEAC_R11Snorm;
@@ -678,13 +691,13 @@ MTLPixelFormat Texture::textureFormatToMTLPixelFormat(TextureFormat value) {
     // MTLPixelFormatBC7_RGBAUnorm supported only on MacOS and Catalyst
     // https://developer.apple.com/documentation/metal/mtlpixelformat/mtlpixelformatbc7_rgbaunorm
   case TextureFormat::RGBA_BC7_UNORM_4x4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST
     return MTLPixelFormatBC7_RGBAUnorm;
 #else
     return MTLPixelFormatInvalid;
 #endif
   case TextureFormat::RGBA_BC7_SRGB_4x4:
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST
     return MTLPixelFormatBC7_RGBAUnorm_sRGB;
 #else
     return MTLPixelFormatInvalid;
@@ -703,6 +716,10 @@ MTLPixelFormat Texture::textureFormatToMTLPixelFormat(TextureFormat value) {
     return MTLPixelFormatDepth32Float_Stencil8;
   case TextureFormat::S_UInt8:
     return MTLPixelFormatStencil8;
+
+  case TextureFormat::YUV_NV12:
+  case TextureFormat::YUV_420p:
+    return MTLPixelFormatInvalid;
   }
 }
 
@@ -718,7 +735,7 @@ TextureFormat Texture::mtlPixelFormatToTextureFormat(MTLPixelFormat value) {
     return TextureFormat::A_UNorm8;
 
 // 16 bpp
-#if !(IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST) // No support for these on macOS
+#if !IGL_PLATFORM_MACOSX // No support for these on macOS
   case MTLPixelFormatBGR5A1Unorm:
     return TextureFormat::B5G5R5A1_UNorm;
   case MTLPixelFormatB5G6R5Unorm:
@@ -768,14 +785,15 @@ TextureFormat Texture::mtlPixelFormatToTextureFormat(MTLPixelFormat value) {
 
   case MTLPixelFormatR32Float:
     return TextureFormat::R_F32;
-
+  case MTLPixelFormatRG32Float:
+    return TextureFormat::RG_F32;
   case MTLPixelFormatRGBA32Uint:
     return TextureFormat::RGBA_UInt32;
   case MTLPixelFormatRGBA32Float:
     return TextureFormat::RGBA_F32;
 
 // Compressed
-#if !(IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST)
+#if !IGL_PLATFORM_MACOSX
   case MTLPixelFormatASTC_4x4_LDR:
     return TextureFormat::RGBA_ASTC_4x4;
   case MTLPixelFormatASTC_4x4_sRGB:
@@ -845,7 +863,7 @@ TextureFormat Texture::mtlPixelFormatToTextureFormat(MTLPixelFormat value) {
   case MTLPixelFormatEAC_RGBA8:
     return TextureFormat::RGBA8_EAC_ETC2;
 #endif
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX
   case MTLPixelFormatBC7_RGBAUnorm:
     return TextureFormat::RGBA_BC7_UNORM_4x4;
   case MTLPixelFormatBC7_RGBAUnorm_sRGB:
@@ -878,5 +896,4 @@ TextureRangeDesc Texture::atMetalSlice(TextureType type,
                                    : range.atLayer(static_cast<uint32_t>(metalSlice));
 }
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

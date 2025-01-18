@@ -10,25 +10,33 @@
 #include <igl/Common.h>
 #include <igl/Macros.h>
 
-#if (IGL_PLATFORM_IOS || IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST) && IGL_BACKEND_ENABLE_METAL
+#if (IGL_PLATFORM_IOS || IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST) && IGL_BACKEND_METAL
 #define IGL_METAL_SUPPORTED 1
 #else
 #define IGL_METAL_SUPPORTED 0
 #endif
 
-#if !IGL_PLATFORM_MACCATALYST && IGL_BACKEND_ENABLE_OPENGL
+#if !IGL_PLATFORM_MACCATALYST && IGL_BACKEND_OPENGL
 #define IGL_OPENGL_SUPPORTED 1
 #else
 #define IGL_OPENGL_SUPPORTED 0
 #endif
 
-#if (IGL_PLATFORM_WIN || IGL_PLATFORM_ANDROID || IGL_PLATFORM_MACOS || IGL_PLATFORM_LINUX) && \
-    IGL_BACKEND_ENABLE_VULKAN
+#if (IGL_PLATFORM_WINDOWS || IGL_PLATFORM_ANDROID || IGL_PLATFORM_MACOSX || IGL_PLATFORM_LINUX) && \
+    IGL_BACKEND_VULKAN && !defined(IGL_UNIT_TESTS_NO_VULKAN)
 #define IGL_VULKAN_SUPPORTED 1
 #else
 #define IGL_VULKAN_SUPPORTED 0
 #endif
 
+// clang-format off
+// @fb-only
+// @fb-only
+// @fb-only
+// @fb-only
+// @fb-only
+// clang-format on
+// @fb-only
 #if IGL_METAL_SUPPORTED
 #include "metal/TestDevice.h"
 #endif
@@ -38,13 +46,16 @@
 #if IGL_VULKAN_SUPPORTED
 #include "vulkan/TestDevice.h"
 #endif
+// @fb-only
+// @fb-only
+// @fb-only
 
 namespace igl::tests::util::device {
 
 bool isBackendTypeSupported(::igl::BackendType backendType) {
   switch (backendType) {
   case ::igl::BackendType::Invalid:
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
     return false;
   case ::igl::BackendType::Metal:
     return IGL_METAL_SUPPORTED;
@@ -59,7 +70,8 @@ bool isBackendTypeSupported(::igl::BackendType backendType) {
 }
 
 std::shared_ptr<::igl::IDevice> createTestDevice(::igl::BackendType backendType,
-                                                 const std::string& backendApi) {
+                                                 const std::string& backendApi,
+                                                 bool enableValidation) {
   if (backendType == ::igl::BackendType::Metal) {
 #if IGL_METAL_SUPPORTED
     return metal::createTestDevice();
@@ -76,11 +88,18 @@ std::shared_ptr<::igl::IDevice> createTestDevice(::igl::BackendType backendType,
   }
   if (backendType == ::igl::BackendType::Vulkan) {
 #if IGL_VULKAN_SUPPORTED
-    return vulkan::createTestDevice();
+    return vulkan::createTestDevice(enableValidation);
 #else
     return nullptr;
 #endif
   }
+  // @fb-only
+// @fb-only
+    // @fb-only
+// @fb-only
+    // @fb-only
+// @fb-only
+  // @fb-only
   return nullptr;
 }
 

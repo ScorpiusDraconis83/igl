@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <shell/shared/netservice/apple/NetServiceApple.h>
 
 #include <igl/Common.h>
@@ -26,7 +28,7 @@
 }
 
 - (void)netServiceWillPublish:(NSNetService*)sender {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     target->willPublish(*owner_);
   }
@@ -34,7 +36,7 @@
 
 - (void)netService:(NSNetService*)sender
      didNotPublish:(NSDictionary<NSString*, NSNumber*>*)errorDict {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     int errorCode = [[errorDict valueForKey:NSNetServicesErrorCode] intValue];
     int errorDomain = [[errorDict valueForKey:NSNetServicesErrorDomain] intValue];
@@ -43,14 +45,14 @@
 }
 
 - (void)netServiceDidPublish:(NSNetService*)sender {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     target->didPublish(*owner_);
   }
 }
 
 - (void)netServiceWillResolve:(NSNetService*)sender {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     target->willResolve(*owner_);
   }
@@ -58,7 +60,7 @@
 
 - (void)netService:(NSNetService*)sender
      didNotResolve:(NSDictionary<NSString*, NSNumber*>*)errorDict {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     int errorCode = [[errorDict valueForKey:NSNetServicesErrorCode] intValue];
     int errorDomain = [[errorDict valueForKey:NSNetServicesErrorDomain] intValue];
@@ -67,14 +69,14 @@
 }
 
 - (void)netServiceDidResolveAddress:(NSNetService*)sender {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     target->didResolveAddress(*owner_);
   }
 }
 
 - (void)netServiceDidStop:(NSNetService*)sender {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     target->didStop(*owner_);
   }
@@ -83,7 +85,7 @@
 - (void)netService:(NSNetService*)sender
     didAcceptConnectionWithInputStream:(NSInputStream*)inputStream
                           outputStream:(NSOutputStream*)outputStream {
-  auto target = (owner_ ? owner_->delegate() : nullptr);
+  auto* target = (owner_ ? owner_->delegate() : nullptr);
   if (target) {
     auto input = std::make_shared<igl::shell::netservice::InputStreamApple>();
     input->initialize(inputStream);
@@ -127,15 +129,15 @@ NetServiceApple::NetServiceApple(NSNetService* netService) : netService_(netServ
   NSInputStream* inputStream = nil;
   NSOutputStream* outputStream = nil;
   [netService_ getInputStream:&inputStream outputStream:&outputStream];
-  IGL_ASSERT(inputStream);
-  IGL_ASSERT(outputStream);
+  IGL_DEBUG_ASSERT(inputStream);
+  IGL_DEBUG_ASSERT(outputStream);
 
   inputStream_->initialize(inputStream);
   outputStream_->initialize(outputStream);
 }
 
 void NetServiceApple::initialize() {
-  if (IGL_VERIFY(nil == netServiceDelegateAdapter_)) {
+  if (IGL_DEBUG_VERIFY(nil == netServiceDelegateAdapter_)) {
     netServiceDelegateAdapter_ = [[IGLShellNetServiceDelegateAdapter alloc] initWithOwner:this];
     [netService_ setDelegate:netServiceDelegateAdapter_];
 
@@ -163,7 +165,7 @@ std::shared_ptr<OutputStream> NetServiceApple::getOutputStream() const noexcept 
 }
 
 std::string NetServiceApple::getName() const noexcept {
-  return std::string([[netService_ name] UTF8String]);
+  return {[[netService_ name] UTF8String]};
 }
 
 } // namespace igl::shell::netservice

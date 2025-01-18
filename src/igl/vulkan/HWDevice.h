@@ -13,11 +13,11 @@
 #include <igl/Device.h>
 #include <igl/HWDevice.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 class VulkanContext;
 struct VulkanContextConfig;
+class VulkanFeatures;
 
 /// @brief This class provides convenience functions to query, and create devices, as well as to
 /// create a VulkanContext object.
@@ -37,14 +37,14 @@ class HWDevice final {
    */
   static std::unique_ptr<VulkanContext> createContext(
       const VulkanContextConfig& config,
-      void* window,
+      void* IGL_NULLABLE window,
       size_t numExtraInstanceExtensions = 0,
-      const char** extraInstanceExtensions = nullptr,
-      void* display = nullptr);
+      const char* IGL_NULLABLE* IGL_NULLABLE extraInstanceExtensions = nullptr,
+      void* IGL_NULLABLE display = nullptr);
 
   static std::vector<HWDeviceDesc> queryDevices(VulkanContext& ctx,
                                                 const HWDeviceQueryDesc& desc,
-                                                Result* outResult = nullptr);
+                                                Result* IGL_NULLABLE outResult = nullptr);
 
   /*
    * @brief Create a new vulkan::Device
@@ -53,14 +53,16 @@ class HWDevice final {
    * height are greater than 0, this functions also initializes the swapchain.
    */
 
-  static std::unique_ptr<IDevice> create(std::unique_ptr<VulkanContext> ctx,
-                                         const HWDeviceDesc& desc,
-                                         uint32_t width,
-                                         uint32_t height,
-                                         size_t numExtraDeviceExtensions = 0,
-                                         const char** extraDeviceExtensions = nullptr,
-                                         Result* outResult = nullptr);
+  static std::unique_ptr<IDevice> create(
+      std::unique_ptr<VulkanContext> ctx,
+      const HWDeviceDesc& desc,
+      uint32_t width,
+      uint32_t height,
+      size_t numExtraDeviceExtensions = 0,
+      const char* IGL_NULLABLE* IGL_NULLABLE extraDeviceExtensions = nullptr,
+      const igl::vulkan::VulkanFeatures* IGL_NULLABLE features = nullptr,
+      const char* IGL_NULLABLE debugName = nullptr,
+      Result* IGL_NULLABLE outResult = nullptr);
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <cmath>
 #include <igl/NameHandle.h>
 
@@ -17,9 +19,9 @@
 #include <igl/opengl/Device.h>
 #include <igl/opengl/GLIncludes.h>
 #include <shell/renderSessions/MRTSession.h>
+#include <shell/shared/renderSession/ShellParams.h>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 struct VertexPosUv {
   iglu::simdtypes::float3 position; // SIMD 128b aligned
   iglu::simdtypes::float2 uv; // SIMD 128b aligned
@@ -51,24 +53,24 @@ static std::string getPrecisionProlog(ShaderPrecision precision) {
 #if IGL_OPENGL_ES
   switch (precision) {
   case ShaderPrecision::Low:
-    return std::string("precision lowp float;");
+    return {"precision lowp float;"};
   case ShaderPrecision::Medium:
-    return std::string("precision mediump float;");
+    return {"precision mediump float;"};
   case ShaderPrecision::High:
-    return std::string("precision highp float;");
+    return {"precision highp float;"};
   }
 #else
   return std::string();
 #endif
-};
+}
 
 static std::string getVersionProlog() {
 #if IGL_OPENGL_ES
-  return std::string("#version 300 es\n");
+  return {"#version 300 es\n"};
 #else
   return std::string("#version 410\n");
 #endif
-};
+}
 
 static std::string getMetalShaderSource(int metalShaderIdx) {
   switch (metalShaderIdx) {
@@ -238,7 +240,7 @@ static std::unique_ptr<IShaderStages> createShaderStagesForBackend(const IDevice
                                                                    int programIndex) {
   switch (device.getBackendType()) {
   case igl::BackendType::Invalid:
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
     return nullptr;
   case igl::BackendType::Vulkan:
     return igl::ShaderStagesCreator::fromModuleStringInput(
@@ -286,13 +288,14 @@ void MRTSession::initialize() noexcept {
   }
 
   // Vertex buffer, Index buffer and Vertex Input
-  BufferDesc vb0Desc =
+  const BufferDesc vb0Desc =
       BufferDesc(BufferDesc::BufferTypeBits::Vertex, vertexData0, sizeof(vertexData0));
   vb0_ = device.createBuffer(vb0Desc, nullptr);
-  BufferDesc vb1Desc =
+  const BufferDesc vb1Desc =
       BufferDesc(BufferDesc::BufferTypeBits::Vertex, vertexData1, sizeof(vertexData1));
   vb1_ = device.createBuffer(vb1Desc, nullptr);
-  BufferDesc ibDesc = BufferDesc(BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData));
+  const BufferDesc ibDesc =
+      BufferDesc(BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData));
   ib0_ = device.createBuffer(ibDesc, nullptr);
 
   VertexInputStateDesc inputDesc;
@@ -318,22 +321,23 @@ void MRTSession::initialize() noexcept {
   }
 
   // Command queue: backed by different types of GPU HW queues
-  const CommandQueueDesc desc{igl::CommandQueueType::Graphics};
+  const CommandQueueDesc desc{};
   commandQueue_ = device.createCommandQueue(desc, nullptr);
+
+  tex0_->generateMipmap(*commandQueue_);
 
   renderPassMRT_.colorAttachments.resize(2);
   renderPassMRT_.colorAttachments[0].loadAction = LoadAction::Clear;
   renderPassMRT_.colorAttachments[0].storeAction = StoreAction::Store;
-  renderPassMRT_.colorAttachments[0].clearColor = getPlatform().getDevice().backendDebugColor();
+  renderPassMRT_.colorAttachments[0].clearColor = getPreferredClearColor();
   renderPassMRT_.colorAttachments[1].loadAction = LoadAction::Clear;
   renderPassMRT_.colorAttachments[1].storeAction = StoreAction::Store;
-  renderPassMRT_.colorAttachments[1].clearColor = getPlatform().getDevice().backendDebugColor();
+  renderPassMRT_.colorAttachments[1].clearColor = getPreferredClearColor();
 
   renderPassDisplayLast_.colorAttachments.resize(1);
   renderPassDisplayLast_.colorAttachments[0].loadAction = LoadAction::Clear;
   renderPassDisplayLast_.colorAttachments[0].storeAction = StoreAction::Store;
-  renderPassDisplayLast_.colorAttachments[0].clearColor =
-      getPlatform().getDevice().backendDebugColor();
+  renderPassDisplayLast_.colorAttachments[0].clearColor = getPreferredClearColor();
 }
 
 void MRTSession::update(const igl::SurfaceTextures surfaceTextures) noexcept {
@@ -344,7 +348,7 @@ void MRTSession::update(const igl::SurfaceTextures surfaceTextures) noexcept {
 
   createOrUpdateFramebufferMRT(surfaceTextures);
 
-  size_t textureUnit = 0;
+  const size_t textureUnit = 0;
 
   // Graphics pipeline: state batch that fully configures GPU for rendering
   if (pipelineStateMRT_ == nullptr) {
@@ -380,24 +384,27 @@ void MRTSession::update(const igl::SurfaceTextures surfaceTextures) noexcept {
   }
 
   // Command buffers (1-N per thread): create, submit and forget
-  CommandBufferDesc cbDesc;
-  std::shared_ptr<ICommandBuffer> buffer = commandQueue_->createCommandBuffer(cbDesc, nullptr);
+  const CommandBufferDesc cbDesc;
+  const std::shared_ptr<ICommandBuffer> buffer =
+      commandQueue_->createCommandBuffer(cbDesc, nullptr);
 
   auto commands = buffer->createRenderCommandEncoder(renderPassMRT_, framebufferMRT_);
 
+  commands->bindIndexBuffer(*ib0_, IndexFormat::UInt16);
+
   // Draw call 0
   // clang-format off
-  commands->bindBuffer(0, BindTarget::kVertex, vb0_, 0);
+  commands->bindVertexBuffer(0, *vb0_);
   commands->bindRenderPipelineState(pipelineStateMRT_);
   commands->bindTexture(textureUnit, BindTarget::kFragment, tex0_.get());
   commands->bindSamplerState(textureUnit, BindTarget::kFragment, samp0_.get());
-  commands->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib0_, 0);
+  commands->drawIndexed(6);
   // clang-format on
 
   // Draw call 1
   // clang-format off
-  commands->bindBuffer(0, BindTarget::kVertex, vb1_, 0);
-  commands->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib0_, 0);
+  commands->bindVertexBuffer(0, *vb1_);
+  commands->drawIndexed(6);
   // clang-format on
 
   commands->endEncoding();
@@ -423,9 +430,10 @@ void MRTSession::update(const igl::SurfaceTextures surfaceTextures) noexcept {
 
   commands = buffer->createRenderCommandEncoder(renderPassDisplayLast_, framebufferDisplayLast_);
 
+  commands->bindIndexBuffer(*ib0_, IndexFormat::UInt16);
+
   // Draw call 0
   // clang-format off
-  commands->bindBuffer(0, BindTarget::kVertex, vb0_, 0);
   commands->bindRenderPipelineState(pipelineStateLastDisplay_);
   auto green = framebufferMRT_->getColorAttachment(0);
   commands->bindTexture(textureUnit, BindTarget::kFragment, green.get());
@@ -434,14 +442,18 @@ void MRTSession::update(const igl::SurfaceTextures surfaceTextures) noexcept {
   commands->bindTexture(textureUnit+1, BindTarget::kFragment, red.get());
   commands->bindSamplerState(textureUnit+1, BindTarget::kFragment, samp0_.get());
 
-  commands->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib0_, 0);
+  commands->bindVertexBuffer(0,  *vb0_);
+  commands->drawIndexed(6);
 
-  commands->bindBuffer(0, BindTarget::kVertex, vb1_, 0);
-  commands->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib0_, 0);
+  commands->bindVertexBuffer(0, *vb1_);
+  commands->drawIndexed(6);
 
   // clang-format on
   commands->endEncoding();
-  buffer->present(surfaceTextures.color);
+
+  if (shellParams().shouldPresent) {
+    buffer->present(surfaceTextures.color);
+  }
 
   commandQueue_->submit(*buffer); // Guarantees ordering between command buffers
 }
@@ -491,5 +503,4 @@ void MRTSession::createOrUpdateFramebufferMRT(const igl::SurfaceTextures& surfac
   framebufferMRT_ = getPlatform().getDevice().createFramebuffer(framebufferDesc, nullptr);
 }
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

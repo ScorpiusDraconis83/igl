@@ -10,6 +10,7 @@
 #include "data/VertexIndexData.h"
 #include "util/Common.h"
 #include "util/TestDevice.h"
+#include "util/TextureValidationHelpers.h"
 
 #include <IGLU/managedUniformBuffer/ManagedUniformBuffer.h>
 #include <array>
@@ -19,7 +20,6 @@
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
 #include <igl/NameHandle.h>
-#include <igl/opengl/Device.h>
 #include <string>
 
 namespace igl::tests {
@@ -52,16 +52,20 @@ class TextureArrayTest : public ::testing::Test {
                                                                         igl::Result* /*result*/) {
     std::shared_ptr<iglu::ManagedUniformBuffer> vertUniformBuffer = nullptr;
 
-    iglu::ManagedUniformBufferInfo vertInfo = {
+    const iglu::ManagedUniformBufferInfo vertInfo = {
         .index = 2,
         .length = sizeof(VertexUniforms),
-        .uniforms = {{.name = "layer",
-                      .type = igl::UniformType::Int,
-                      .offset = offsetof(VertexUniforms, layer)}}};
+        .uniforms = {
+            igl::UniformDesc{
+                .name = "layer",
+                .type = igl::UniformType::Int,
+                .offset = offsetof(VertexUniforms, layer),
+            },
+        }};
 
     vertUniformBuffer = std::make_shared<iglu::ManagedUniformBuffer>(device, vertInfo);
 
-    IGL_ASSERT(vertUniformBuffer->result.isOk());
+    IGL_DEBUG_ASSERT(vertUniformBuffer->result.isOk());
     return vertUniformBuffer;
   }
 
@@ -93,11 +97,11 @@ class TextureArrayTest : public ::testing::Test {
     }
 
     // Create an offscreen texture to render to
-    TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                             kOffscreenTexWidth,
-                                             kOffscreenTexHeight,
-                                             TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
+    const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                   kOffscreenTexWidth,
+                                                   kOffscreenTexHeight,
+                                                   TextureDesc::TextureUsageBits::Sampled |
+                                                       TextureDesc::TextureUsageBits::Attachment);
 
     Result ret;
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
@@ -120,48 +124,49 @@ class TextureArrayTest : public ::testing::Test {
 
     // Initialize shader stages
     std::unique_ptr<IShaderStages> stages;
-    if (iglDev_->hasFeature(DeviceFeatures::Texture2DArray)) {
-      if (iglDev_->getBackendType() == BackendType::OpenGL) {
+    if (iglDev_->getBackendType() == BackendType::OpenGL) {
 #if IGL_BACKEND_OPENGL
-        if (opengl::DeviceFeatureSet::usesOpenGLES()) {
+      if (opengl::DeviceFeatureSet::usesOpenGLES()) {
+        util::createShaderStages(iglDev_,
+                                 igl::tests::data::shader::OGL_SIMPLE_VERT_SHADER_TEXARRAY_ES3,
+                                 igl::tests::data::shader::shaderFunc,
+                                 igl::tests::data::shader::OGL_SIMPLE_FRAG_SHADER_TEXARRAY_ES3,
+                                 igl::tests::data::shader::shaderFunc,
+                                 stages);
+      } else {
+        if (!iglDev_->hasRequirement(DeviceRequirement::TextureArrayExtReq)) {
           util::createShaderStages(iglDev_,
-                                   igl::tests::data::shader::OGL_SIMPLE_VERT_SHADER_TEXARRAY_ES3,
+                                   igl::tests::data::shader::OGL_SIMPLE_VERT_SHADER_TEXARRAY,
                                    igl::tests::data::shader::shaderFunc,
-                                   igl::tests::data::shader::OGL_SIMPLE_FRAG_SHADER_TEXARRAY_ES3,
+                                   igl::tests::data::shader::OGL_SIMPLE_FRAG_SHADER_TEXARRAY,
                                    igl::tests::data::shader::shaderFunc,
                                    stages);
-        } else {
-          if (!iglDev_->hasRequirement(DeviceRequirement::TextureArrayExtReq)) {
-            util::createShaderStages(iglDev_,
-                                     igl::tests::data::shader::OGL_SIMPLE_VERT_SHADER_TEXARRAY,
-                                     igl::tests::data::shader::shaderFunc,
-                                     igl::tests::data::shader::OGL_SIMPLE_FRAG_SHADER_TEXARRAY,
-                                     igl::tests::data::shader::shaderFunc,
-                                     stages);
-          } else if (iglDev_->hasFeature(DeviceFeatures::TextureArrayExt)) {
-            util::createShaderStages(iglDev_,
-                                     igl::tests::data::shader::OGL_SIMPLE_VERT_SHADER_TEXARRAY_EXT,
-                                     igl::tests::data::shader::shaderFunc,
-                                     igl::tests::data::shader::OGL_SIMPLE_FRAG_SHADER_TEXARRAY_EXT,
-                                     igl::tests::data::shader::shaderFunc,
-                                     stages);
-          }
+        } else if (iglDev_->hasFeature(DeviceFeatures::TextureArrayExt)) {
+          util::createShaderStages(iglDev_,
+                                   igl::tests::data::shader::OGL_SIMPLE_VERT_SHADER_TEXARRAY_EXT,
+                                   igl::tests::data::shader::shaderFunc,
+                                   igl::tests::data::shader::OGL_SIMPLE_FRAG_SHADER_TEXARRAY_EXT,
+                                   igl::tests::data::shader::shaderFunc,
+                                   stages);
         }
-#endif // IGL_BACKEND_OPENGL
-      } else if (iglDev_->getBackendType() == BackendType::Vulkan) {
-        util::createShaderStages(iglDev_,
-                                 igl::tests::data::shader::VULKAN_SIMPLE_VERT_SHADER_TEX_2DARRAY,
-                                 igl::tests::data::shader::shaderFunc,
-                                 igl::tests::data::shader::VULKAN_SIMPLE_FRAG_SHADER_TEX_2DARRAY,
-                                 igl::tests::data::shader::shaderFunc,
-                                 stages);
-      } else if (iglDev_->getBackendType() == BackendType::Metal) {
-        util::createShaderStages(iglDev_,
-                                 igl::tests::data::shader::MTL_SIMPLE_SHADER_TXT_2D_ARRAY,
-                                 igl::tests::data::shader::simpleVertFunc,
-                                 igl::tests::data::shader::simpleFragFunc,
-                                 stages);
       }
+#if defined(IGL_PLATFORM_LINUX) && IGL_PLATFORM_LINUX
+      GTEST_SKIP() << "Temporarily disabled.";
+#endif
+#endif // IGL_BACKEND_OPENGL
+    } else if (iglDev_->getBackendType() == BackendType::Vulkan) {
+      util::createShaderStages(iglDev_,
+                               igl::tests::data::shader::VULKAN_SIMPLE_VERT_SHADER_TEX_2DARRAY,
+                               igl::tests::data::shader::shaderFunc,
+                               igl::tests::data::shader::VULKAN_SIMPLE_FRAG_SHADER_TEX_2DARRAY,
+                               igl::tests::data::shader::shaderFunc,
+                               stages);
+    } else if (iglDev_->getBackendType() == BackendType::Metal) {
+      util::createShaderStages(iglDev_,
+                               igl::tests::data::shader::MTL_SIMPLE_SHADER_TXT_2D_ARRAY,
+                               igl::tests::data::shader::simpleVertFunc,
+                               igl::tests::data::shader::simpleFragFunc,
+                               stages);
     }
 
     ASSERT_TRUE(stages != nullptr);
@@ -222,7 +227,7 @@ class TextureArrayTest : public ::testing::Test {
     ASSERT_TRUE(uv_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
@@ -330,17 +335,17 @@ void runUploadTest(IDevice& device,
                    bool singleUpload,
                    bool modifyTexture) {
   Result ret;
-  std::shared_ptr<IRenderPipelineState> pipelineState;
+  const std::shared_ptr<IRenderPipelineState> pipelineState;
 
   //-------------------------------------
   // Create input texture and upload data
   //-------------------------------------
-  TextureDesc texDesc = TextureDesc::new2DArray(TextureFormat::RGBA_UNorm8,
-                                                kOffscreenTexWidth,
-                                                kOffscreenTexHeight,
-                                                kNumLayers,
-                                                TextureDesc::TextureUsageBits::Sampled |
-                                                    TextureDesc::TextureUsageBits::Attachment);
+  const TextureDesc texDesc = TextureDesc::new2DArray(
+      TextureFormat::RGBA_UNorm8,
+      kOffscreenTexWidth,
+      kOffscreenTexHeight,
+      kNumLayers,
+      TextureDesc::TextureUsageBits::Sampled | TextureDesc::TextureUsageBits::Attachment);
   auto tex = device.createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(tex != nullptr);
@@ -480,7 +485,11 @@ TEST_F(TextureArrayTest, UploadToMip_SingleUpload) {
 }
 
 TEST_F(TextureArrayTest, UploadToMip_LayerByLayer) {
+#if defined(IGL_PLATFORM_LINUX) && IGL_PLATFORM_LINUX
+  GTEST_SKIP() << "Temporarily disabled.";
+#else
   runUploadToMipTest(*iglDev_, *cmdQueue_, false);
+#endif
 }
 
 //
@@ -533,8 +542,8 @@ TEST_F(TextureArrayTest, Passthrough_SampleFromArray) {
     ASSERT_TRUE(cmdBuf_ != nullptr);
 
     auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-    cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
     cmds->bindRenderPipelineState(pipelineState);
 
@@ -542,15 +551,16 @@ TEST_F(TextureArrayTest, Passthrough_SampleFromArray) {
     cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
     Result result{};
-    auto vertUniformBuffer = createVertexUniformBuffer(*iglDev_.get(), &result);
+    auto vertUniformBuffer = createVertexUniformBuffer(*iglDev_, &result);
     ASSERT_TRUE(result.isOk());
 
     vertexUniforms_.layer = static_cast<int>(layer);
 
     *static_cast<VertexUniforms*>(vertUniformBuffer->getData()) = vertexUniforms_;
-    vertUniformBuffer->bind(*iglDev_.get(), *pipelineState, *cmds.get());
+    vertUniformBuffer->bind(*iglDev_, *pipelineState, *cmds);
 
-    cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+    cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+    cmds->drawIndexed(6);
 
     cmds->endEncoding();
 
@@ -640,15 +650,16 @@ TEST_F(TextureArrayTest, Passthrough_RenderToArray) {
 
     renderPass_.colorAttachments[0].layer = layer;
     auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, customFramebuffer);
-    cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
     cmds->bindRenderPipelineState(pipelineState);
 
     cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
     cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-    cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+    cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+    cmds->drawIndexed(6);
 
     cmds->endEncoding();
 

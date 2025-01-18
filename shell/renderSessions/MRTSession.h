@@ -5,14 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <igl/RenderPass.h>
 #include <shell/shared/platform/Platform.h>
 #include <shell/shared/renderSession/RenderSession.h>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 class MRTSession : public RenderSession {
  public:
@@ -50,5 +51,4 @@ class MRTSession : public RenderSession {
   std::shared_ptr<ISamplerState> samp0_; // Samplers for texture (mipmap, clamp, linear etc.)
 };
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

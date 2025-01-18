@@ -12,8 +12,7 @@
 
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 class TestShaderStages : public IShaderStages {
  public:
@@ -104,12 +103,13 @@ TEST_F(HashTest, GraphicsPipeline2) {
     return;
   }
 
-  // 56 is the size without unitSamplerMaps, colorAttachments, and debugName as those fields may
+  // 64 is the size without unitSamplerMaps, colorAttachments, and debugName as those fields may
   // vary between compilers and machines
-  size_t expectedSize = 56 + 2 * sizeof(std::unordered_map<size_t, std::string>) +
-                        sizeof(std::unordered_map<size_t, igl::NameHandle>) +
-                        sizeof(std::vector<RenderPipelineDesc::TargetDesc::ColorAttachment>) +
-                        sizeof(igl::NameHandle);
+  const size_t expectedSize = 64 + 2 * sizeof(std::unordered_map<size_t, std::string>) +
+                              sizeof(std::unordered_map<size_t, igl::NameHandle>) +
+                              sizeof(std::vector<RenderPipelineDesc::TargetDesc::ColorAttachment>) +
+                              sizeof(igl::NameHandle) +
+                              sizeof(std::shared_ptr<ISamplerState>) * IGL_TEXTURE_SAMPLERS_MAX;
 
   ASSERT_EQ(expectedSize, sizeof(RenderPipelineDesc));
 }
@@ -236,5 +236,4 @@ TEST_F(HashTest, DepthStencilState1) {
             std::hash<DepthStencilStateDesc>()(descTwo));
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

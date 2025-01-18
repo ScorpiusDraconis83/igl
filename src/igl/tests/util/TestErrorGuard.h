@@ -9,9 +9,7 @@
 
 #include <igl/IGL.h>
 
-namespace igl {
-namespace tests {
-namespace util {
+namespace igl::tests::util {
 /// Sets an IGL handler that will cause gtest to fail when IGLReportErrorHandler is called
 class TestErrorGuard final {
  public:
@@ -19,18 +17,17 @@ class TestErrorGuard final {
 
   virtual ~TestErrorGuard();
 
-  static void ReportErrorHandler(const char* file,
+  static void ReportErrorHandler(const char* category,
+                                 const char* reason,
+                                 const char* file,
                                  const char* func,
                                  int line,
-                                 const char* category,
                                  const char* format,
-                                 ...);
+                                 va_list ap);
 
  private:
-#if IGL_REPORT_ERROR_ENABLED
-  IGLReportErrorFunc savedErrorHandler_;
+#if IGL_SOFT_ERROR_ENABLED
+  IGLErrorHandlerFunc savedErrorHandler_;
 #endif
 };
-} // namespace util
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests::util

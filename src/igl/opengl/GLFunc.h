@@ -105,6 +105,7 @@ using PFNIGLDISPATCHCOMPUTEPROC = void (*)(GLuint num_groups_x,
                                            GLuint num_groups_z);
 using PFNIGLDRAWBUFFERSPROC = void (*)(GLsizei, const GLenum*);
 using PFNIGLDRAWELEMENTSINDIRECTPROC = void (*)(GLenum mode, GLenum type, const GLvoid* indirect);
+using PFNIGLDRAWARRAYSINDIRECTPROC = void (*)(GLenum mode, const GLvoid* indirect);
 using PFNIGLFENCESYNCPROC = GLsync (*)(GLenum condition, GLbitfield flags);
 using PFNIGLFRAMEBUFFERRENDERBUFFERPROC = void (*)(GLenum target,
                                                    GLenum attachment,
@@ -185,7 +186,7 @@ using PFNIGLGETPROGRAMRESOURCENAMEPROC = void (*)(GLuint program,
                                                   GLsizei* length,
                                                   char* name);
 using PFNIGLGETRENDERBUFFERPARAMETERIVPROC = void (*)(GLenum target, GLenum pname, GLint* params);
-using PFNIGLGETSTRINGIPROC = const GLubyte* (*)(GLenum name, GLint index);
+using PFNIGLGETSTRINGIPROC = const GLubyte* (*)(GLenum name, GLuint index);
 using PFNIGLGETSYNCIVPROC =
     void (*)(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei* length, GLint* values);
 using PFNIGLGETTEXTUREHANDLEPROC = GLuint64 (*)(GLuint texture);
@@ -280,6 +281,16 @@ using PFNIGLUNMAPBUFFERPROC = void (*)(GLenum target);
 
 using PFNIGLVERTEXATTRIBDIVISORPROC = void (*)(GLuint index, GLuint divisor);
 
+using PFNIGLDRAWELEMENTSINSTANCEDPROC =
+    void (*)(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei primcount);
+
+using PFNIGLDRAWARRAYSINSTANCEDPROC = void (*)(GLenum mode,
+                                               GLint first,
+                                               GLsizei count,
+                                               GLsizei primcount);
+
+using PFNPOLYGONOFFSETCLAMPPROC = void (*)(float factor, float units, float clamp);
+
 ///--------------------------------------
 /// MARK: - OpenGL ES / OpenGL
 
@@ -321,7 +332,7 @@ GLuint iglGetDebugMessageLog(GLuint count,
                              GLenum* severities,
                              GLsizei* lengths,
                              GLchar* messageLog);
-const GLubyte* iglGetStringi(GLenum name, GLint index);
+const GLubyte* iglGetStringi(GLenum name, GLuint index);
 void* iglMapBuffer(GLenum target, GLbitfield access);
 void iglObjectLabel(GLenum identifier, GLuint name, GLsizei length, const char* label);
 void iglPopDebugGroup();
@@ -349,6 +360,12 @@ void iglTexSubImage3D(GLenum target,
                       const GLvoid* pixels);
 void iglUnmapBuffer(GLenum target);
 void iglVertexAttribDivisor(GLuint index, GLuint divisor);
+void iglDrawElementsInstanced(GLenum mode,
+                              GLsizei count,
+                              GLenum type,
+                              const void* indices,
+                              GLsizei instancecount);
+void iglDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
 
 ///--------------------------------------
 /// MARK: - GL_APPLE_framebuffer_multisample
@@ -381,6 +398,8 @@ void iglDispatchCompute(GLuint num_groups_x, GLuint num_groups_y, GLuint num_gro
 /// MARK: - GL_ARB_draw_indirect
 
 void iglDrawElementsIndirect(GLenum mode, GLenum type, const GLvoid* indirect);
+
+void iglDrawArraysIndirect(GLenum mode, const GLvoid* indirect);
 
 ///--------------------------------------
 /// MARK: - GL_ARB_ES2_compatibility
@@ -530,6 +549,11 @@ void iglUniformBlockBinding(GLuint pid, GLuint uniformBlockIndex, GLuint uniform
 void iglBindVertexArray(GLuint vao);
 void iglDeleteVertexArrays(GLsizei n, const GLuint* vertexArrays);
 void iglGenVertexArrays(GLsizei n, GLuint* vertexArrays);
+
+///--------------------------------------
+/// MARK: - GL_ARB_polygon_offset_clamp
+
+void iglPolygonOffsetClamp(float factor, float units, float clamp);
 
 ///--------------------------------------
 /// MARK: - GL_EXT_debug_label

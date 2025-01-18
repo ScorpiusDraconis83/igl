@@ -7,6 +7,7 @@
 
 #pragma once
 #include <cstdint>
+#include <igl/Common.h>
 
 namespace igl {
 /**
@@ -139,6 +140,7 @@ enum class TextureFormat : uint8_t {
 
   // 64 bpp
   RGBA_F16,
+  RG_F32,
 
   // 96 bpp
   RGB_F32,
@@ -200,9 +202,30 @@ enum class TextureFormat : uint8_t {
   Z_UNorm24,
   Z_UNorm32, // NA on iOS/GLES but works on iOS Metal. The client has to account for
              // this!
-  S8_UInt_Z24_UNorm, // NA on iOS
+  S8_UInt_Z24_UNorm,
   S8_UInt_Z32_UNorm, // NA on iOS/GLES but works on iOS Metal. The client has to
                      // account for this!
-  S_UInt8
+  S_UInt8,
+
+  YUV_NV12, // Semi-planar 8-bit YUV 4:2:0 NV12; 2 planes in a single image
+  YUV_420p, // Tri-planar  8-bit YUV 4:2:0;      3 planes in a single image
 };
+
+inline igl::TextureFormat sRGBToUNorm(igl::TextureFormat format) {
+  if (format == TextureFormat::RGBA_SRGB) {
+    return TextureFormat::RGBA_UNorm8;
+  } else if (format == TextureFormat::BGRA_SRGB) {
+    return TextureFormat::BGRA_UNorm8;
+  }
+  IGL_UNREACHABLE_RETURN(TextureFormat::RGBA_UNorm8)
+}
+
+inline igl::TextureFormat UNormTosRGB(igl::TextureFormat format) {
+  if (format == TextureFormat::RGBA_UNorm8) {
+    return TextureFormat::RGBA_SRGB;
+  } else if (format == TextureFormat::BGRA_UNorm8) {
+    return TextureFormat::BGRA_SRGB;
+  }
+  IGL_UNREACHABLE_RETURN(TextureFormat::RGBA_SRGB)
+}
 } // namespace igl

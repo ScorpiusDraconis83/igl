@@ -9,14 +9,55 @@
 
 #include <string>
 
+#include <igl/Common.h>
+
 namespace igl {
 
+class ICommandBuffer;
 class IDevice;
+
+class IBuffer;
+class IRenderPipelineState;
+class ISamplerState;
+class ITexture;
+
+/**
+ * Dependencies are used to issue proper memory barriers for external resources, such as textures
+ * modified by non-IGL code (Skia, Qt, etc), and synchronize between graphics and compute pipelines.
+ */
+struct Dependencies {
+  static constexpr uint32_t IGL_MAX_TEXTURE_DEPENDENCIES = 8;
+  static constexpr uint32_t IGL_MAX_BUFFER_DEPENDENCIES = 8;
+  // Note: please ensure that both arrays are dense, meaning that processing will halt immediately
+  // if any NULL texture or buffer is encountered.
+  ITexture* IGL_NULLABLE textures[IGL_MAX_TEXTURE_DEPENDENCIES] = {};
+  IBuffer* IGL_NULLABLE buffers[IGL_MAX_BUFFER_DEPENDENCIES] = {};
+  const Dependencies* IGL_NULLABLE next = nullptr; // optional extra dependencies
+};
+
+/**
+ * A BindGroup represents a set of resources bound to a command encoder.
+ * It is a replacement of the old OpenGL-style binding model where individual resources are bound
+ * using multiple calls to bindTexture(...), bindSamplerState(), and bindBuffer(...).
+ */
+struct BindGroupTextureDesc {
+  std::shared_ptr<ITexture> textures[IGL_TEXTURE_SAMPLERS_MAX] = {};
+  std::shared_ptr<ISamplerState> samplers[IGL_TEXTURE_SAMPLERS_MAX] = {};
+  std::string debugName;
+};
+struct BindGroupBufferDesc {
+  std::shared_ptr<IBuffer> buffers[IGL_UNIFORM_BLOCKS_BINDING_MAX] = {};
+  size_t offset[IGL_UNIFORM_BLOCKS_BINDING_MAX] = {};
+  size_t size[IGL_UNIFORM_BLOCKS_BINDING_MAX] = {}; // 0 means the remaining size from `offset` to
+                                                    // the end of the buffer
+  uint32_t isDynamicBufferMask = 0; // one bit per each buffer
+  std::string debugName;
+};
 
 class ICommandEncoder {
  public:
-  ICommandEncoder(std::shared_ptr<ICommandBuffer> commandBuffer) :
-    commandBuffer_(std::move(commandBuffer)) {}
+  explicit ICommandEncoder(const std::shared_ptr<ICommandBuffer>& commandBuffer) :
+    commandBuffer_(commandBuffer) {}
 
   virtual ~ICommandEncoder() = default;
 
@@ -57,12 +98,12 @@ class ICommandEncoder {
   virtual void popDebugGroupLabel() const = 0;
 
   ICommandBuffer& getCommandBuffer() {
-    IGL_ASSERT(commandBuffer_);
+    IGL_DEBUG_ASSERT(commandBuffer_);
     return *commandBuffer_;
   }
 
-  std::shared_ptr<ICommandBuffer> getCommandBufferPtr() {
-    IGL_ASSERT(commandBuffer_);
+  [[nodiscard]] const std::shared_ptr<ICommandBuffer>& getCommandBufferPtr() const {
+    IGL_DEBUG_ASSERT(commandBuffer_);
     return commandBuffer_;
   }
 

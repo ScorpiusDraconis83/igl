@@ -9,34 +9,24 @@
 
 #include <algorithm>
 #include <igl/opengl/Buffer.h>
-#include <igl/opengl/CommandBuffer.h>
-#include <igl/opengl/ComputeCommandEncoder.h>
 #include <igl/opengl/ComputePipelineState.h>
-#include <igl/opengl/DepthStencilState.h>
-#include <igl/opengl/Device.h>
-#include <igl/opengl/Errors.h>
-#include <igl/opengl/Framebuffer.h>
 #include <igl/opengl/IContext.h>
-#include <igl/opengl/SamplerState.h>
-#include <igl/opengl/Shader.h>
 #include <igl/opengl/Texture.h>
-#include <igl/opengl/VertexArrayObject.h>
 #include <igl/opengl/VertexInputState.h>
 
 #define SET_DIRTY(dirtyMap, index) dirtyMap.set(index)
 #define CLEAR_DIRTY(dirtyMap, index) dirtyMap.reset(index)
 #define IS_DIRTY(dirtyMap, index) dirtyMap[index]
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 ComputeCommandAdapter::ComputeCommandAdapter(IContext& context) :
   WithContext(context), uniformAdapter_(context, UniformAdapter::PipelineType::Compute) {}
 
 void ComputeCommandAdapter::clearTextures() {}
 
-void ComputeCommandAdapter::setTexture(ITexture* texture, size_t index) {
-  if (!IGL_VERIFY(index < IGL_TEXTURE_SAMPLERS_MAX)) {
+void ComputeCommandAdapter::setTexture(ITexture* texture, uint32_t index) {
+  if (!IGL_DEBUG_VERIFY(index < IGL_TEXTURE_SAMPLERS_MAX)) {
     return;
   }
   textureStates_[index] = texture;
@@ -47,12 +37,11 @@ void ComputeCommandAdapter::clearBuffers() {
   buffersDirty_.reset();
 }
 
-void ComputeCommandAdapter::setBuffer(std::shared_ptr<Buffer> buffer, size_t offset, int index) {
-  IGL_ASSERT_MSG(index >= 0, "Invalid index passed to setVertexBuffer");
-  IGL_ASSERT_MSG(index < IGL_VERTEX_BUFFER_MAX,
-                 "Buffer index is beyond max, may want to increase limit");
-  if (index >= 0 && index < uniformAdapter_.getMaxUniforms() && buffer) {
-    buffers_[index] = {std::move(buffer), offset};
+void ComputeCommandAdapter::setBuffer(Buffer* buffer, size_t offset, uint32_t index) {
+  IGL_DEBUG_ASSERT(index < IGL_BUFFER_BINDINGS_MAX,
+                   "Buffer index is beyond max, may want to increase limit");
+  if (index < uniformAdapter_.getMaxUniforms() && buffer) {
+    buffers_[index] = {buffer, offset};
     SET_DIRTY(buffersDirty_, index);
   }
 }
@@ -67,11 +56,12 @@ void ComputeCommandAdapter::setUniform(const UniformDesc& uniformDesc,
   uniformAdapter_.setUniform(uniformDesc, data, outResult);
 }
 
-void ComputeCommandAdapter::setBlockUniform(const std::shared_ptr<Buffer>& buffer,
+void ComputeCommandAdapter::setBlockUniform(Buffer* buffer,
                                             size_t offset,
+                                            size_t size,
                                             int index,
                                             Result* outResult) {
-  uniformAdapter_.setUniformBuffer(buffer, offset, index, outResult);
+  uniformAdapter_.setUniformBuffer(buffer, offset, size, index, outResult);
 }
 
 void ComputeCommandAdapter::dispatchThreadGroups(const Dimensions& threadgroupCount,
@@ -97,19 +87,19 @@ void ComputeCommandAdapter::clearDependentResources(
 
 void ComputeCommandAdapter::willDispatch() {
   Result ret;
-  auto pipelineState = static_cast<ComputePipelineState*>(pipelineState_.get());
+  auto* pipelineState = static_cast<ComputePipelineState*>(pipelineState_.get());
 
-  IGL_ASSERT_MSG(pipelineState, "ComputePipelineState is nullptr");
+  IGL_DEBUG_ASSERT(pipelineState, "ComputePipelineState is nullptr");
   if (pipelineState == nullptr) {
     return;
   }
 
-  for (size_t bufferIndex = 0; bufferIndex < IGL_VERTEX_BUFFER_MAX; ++bufferIndex) {
+  for (uint32_t bufferIndex = 0; bufferIndex < IGL_BUFFER_BINDINGS_MAX; ++bufferIndex) {
     if (!IS_DIRTY(buffersDirty_, bufferIndex)) {
       continue;
     }
     auto& bufferState = buffers_[bufferIndex];
-    ret = pipelineState->bindBuffer(bufferIndex, bufferState.resource.get());
+    ret = pipelineState->bindBuffer(bufferIndex, bufferState.resource);
     CLEAR_DIRTY(buffersDirty_, bufferIndex);
     if (!ret.isOk()) {
       IGL_LOG_INFO_ONCE(ret.message.c_str());
@@ -147,8 +137,8 @@ void ComputeCommandAdapter::didDispatch() {
   if (pipelineState_ == nullptr) {
     return;
   }
-  auto pipelineState = static_cast<ComputePipelineState*>(pipelineState_.get());
-  IGL_ASSERT_MSG(pipelineState, "ComputePipelineState is nullptr");
+  auto* pipelineState = static_cast<ComputePipelineState*>(pipelineState_.get());
+  IGL_DEBUG_ASSERT(pipelineState, "ComputePipelineState is nullptr");
   if (pipelineState == nullptr) {
     return;
   }
@@ -170,5 +160,4 @@ void ComputeCommandAdapter::endEncoding() {
   uniformAdapter_.clearUniformBuffers();
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

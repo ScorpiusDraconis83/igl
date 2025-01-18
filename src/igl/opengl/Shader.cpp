@@ -9,7 +9,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <igl/opengl/CommandBuffer.h>
 #include <igl/opengl/Device.h>
 #include <igl/opengl/Errors.h>
 #include <string>
@@ -19,11 +18,10 @@
 #include <fstream>
 #endif // IGL_SHADER_DUMP
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 ShaderStages::ShaderStages(const ShaderStagesDesc& desc, IContext& context) :
-  IShaderStages(desc), WithContext(context), programID_(0) {}
+  IShaderStages(desc), WithContext(context) {}
 
 ShaderStages::~ShaderStages() {
   if (programID_ != 0) {
@@ -33,14 +31,14 @@ ShaderStages::~ShaderStages() {
 }
 
 void ShaderStages::createRenderProgram(Result* result) {
-  if (!IGL_VERIFY(getVertexModule())) {
+  if (!IGL_DEBUG_VERIFY(getVertexModule())) {
     // we need a vertex shader and a fragment shader in order to link the program
     Result::setResult(
         result, Result::Code::ArgumentInvalid, "Missing required vertex shader stage");
     return;
   }
 
-  if (!IGL_VERIFY(getFragmentModule())) {
+  if (!IGL_DEBUG_VERIFY(getFragmentModule())) {
     // we need a vertex shader and a fragment shader in order to link the program
     Result::setResult(
         result, Result::Code::ArgumentInvalid, "Missing required fragment shader stage");
@@ -49,8 +47,8 @@ void ShaderStages::createRenderProgram(Result* result) {
 
   const auto& vertexShader = static_cast<ShaderModule&>(*getVertexModule());
   const auto& fragmentShader = static_cast<ShaderModule&>(*getFragmentModule());
-  GLuint vertexShaderID = vertexShader.getShaderID();
-  GLuint fragmentShaderID = fragmentShader.getShaderID();
+  const GLuint vertexShaderID = vertexShader.getShaderID();
+  const GLuint fragmentShaderID = fragmentShader.getShaderID();
 
   if (vertexShaderID == 0 || fragmentShaderID == 0) {
     // we need valid shaders in order to link the program
@@ -61,7 +59,7 @@ void ShaderStages::createRenderProgram(Result* result) {
   // always create a new temp program ID
   // we'll set or update this object's program ID after the linking succeeds
   // otherwise we won't modify this program, so we can still use it
-  GLuint programID = getContext().createProgram();
+  const GLuint programID = getContext().createProgram();
   if (programID == 0) {
     Result::setResult(result, Result::Code::RuntimeError, "Failed to create GL program");
     return;
@@ -77,7 +75,7 @@ void ShaderStages::createRenderProgram(Result* result) {
   getContext().detachShader(programID, fragmentShaderID);
 
   // check to see if the linking succeeded
-  GLint status;
+  GLint status = 0;
   getContext().getProgramiv(programID, GL_LINK_STATUS, &status);
   if (status == GL_FALSE) {
     // Get the size of log
@@ -107,7 +105,7 @@ void ShaderStages::createRenderProgram(Result* result) {
 }
 
 void ShaderStages::createComputeProgram(Result* result) {
-  if (!IGL_VERIFY(getComputeModule())) {
+  if (!IGL_DEBUG_VERIFY(getComputeModule())) {
     // we need a vertex shader and a fragment shader in order to link the program
     Result::setResult(result, Result::Code::ArgumentInvalid, "Missing required compute shader");
     return;
@@ -115,7 +113,7 @@ void ShaderStages::createComputeProgram(Result* result) {
 
   const auto& shader = static_cast<ShaderModule&>(*getComputeModule());
 
-  GLuint shaderID = shader.getShaderID();
+  const GLuint shaderID = shader.getShaderID();
 
   if (shaderID == 0) {
     // we need valid shaders in order to link the program
@@ -126,7 +124,7 @@ void ShaderStages::createComputeProgram(Result* result) {
   // always create a new temp program ID
   // we'll set or update this object's program ID after the linking succeeds
   // otherwise we won't modify this program, so we can still use it
-  GLuint programID = getContext().createProgram();
+  const GLuint programID = getContext().createProgram();
   if (programID == 0) {
     Result::setResult(result, Result::Code::RuntimeError, "Failed to create compute GL program");
     return;
@@ -140,7 +138,7 @@ void ShaderStages::createComputeProgram(Result* result) {
   getContext().detachShader(programID, shaderID);
 
   // check to see if the linking succeeded
-  GLint status;
+  GLint status = 0;
   getContext().getProgramiv(programID, GL_LINK_STATUS, &status);
   if (status == GL_FALSE) {
     const std::string errorLog = getProgramInfoLog(programID);
@@ -168,34 +166,30 @@ Result ShaderStages::create(const ShaderStagesDesc& /*desc*/) {
   } else if (getType() == ShaderStagesType::Compute) {
     createComputeProgram(&result);
   } else {
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
   }
 
   return result;
 }
 
-Result ShaderStages::validate() {
+Result ShaderStages::validate() const {
   getContext().validateProgram(programID_);
-  GLint status;
+  GLint status = 0;
   getContext().getProgramiv(programID_, GL_VALIDATE_STATUS, &status);
   if (status == GL_FALSE) {
     std::string errorLog = getProgramInfoLog(programID_);
     IGL_LOG_ERROR("Failed to validate program:\n%s\n", errorLog.c_str());
-    Result result(Result::Code::RuntimeError, std::move(errorLog));
+    return Result(Result::Code::RuntimeError, std::move(errorLog));
   }
 
   return Result{};
 }
 
-void ShaderStages::bind() {
-  if (getContext().shouldValidateShaders()) {
-    const auto result = validate();
-    IGL_ASSERT_MSG(result.isOk(), result.message.c_str());
-  }
+void ShaderStages::bind() const {
   getContext().useProgram(programID_);
 }
 
-void ShaderStages::unbind() {
+void ShaderStages::unbind() const {
   getContext().useProgram(0);
 }
 
@@ -212,7 +206,7 @@ ShaderModule::~ShaderModule() {
 // compile the shader from the given src shader code
 Result ShaderModule::create(const ShaderModuleDesc& desc) {
   if (desc.input.type == ShaderInputType::Binary) {
-    IGL_ASSERT_NOT_IMPLEMENTED();
+    IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
     return Result(Result::Code::Unimplemented);
   }
 
@@ -244,14 +238,17 @@ Result ShaderModule::create(const ShaderModuleDesc& desc) {
   // always create a new temp shader ID
   // we'll set or update this object's shader ID after the compilation succeeds
   // otherwise we won't modify this shader
-  GLuint shaderID = getContext().createShader(shaderType_);
+  const GLuint shaderID = getContext().createShader(shaderType_);
+  if (shaderID == 0) {
+    return Result(Result::Code::RuntimeError, "Failed to create shader ID");
+  }
 
   if (!desc.debugName.empty() &&
       getContext().deviceFeatures().hasInternalFeature(InternalFeatures::DebugLabel)) {
-    GLenum identifier = getContext().deviceFeatures().hasInternalRequirement(
-                            InternalRequirement::DebugLabelExtEnumsReq)
-                            ? GL_SHADER_OBJECT_EXT
-                            : GL_SHADER;
+    const GLenum identifier = getContext().deviceFeatures().hasInternalRequirement(
+                                  InternalRequirement::DebugLabelExtEnumsReq)
+                                  ? GL_SHADER_OBJECT_EXT
+                                  : GL_SHADER;
     getContext().objectLabel(identifier, shaderID, desc.debugName.size(), desc.debugName.c_str());
   }
 
@@ -290,7 +287,7 @@ Result ShaderModule::create(const ShaderModuleDesc& desc) {
   getContext().compileShader(shaderID);
 
   // see if the compilation succeeded
-  GLint status;
+  GLint status = 0;
   getContext().getShaderiv(shaderID, GL_COMPILE_STATUS, &status);
   if (status == GL_FALSE) {
     // Get the size of log
@@ -327,7 +324,7 @@ Result ShaderModule::create(const ShaderModuleDesc& desc) {
   return Result();
 }
 
-std::string ShaderStages::getProgramInfoLog(GLuint programID) {
+std::string ShaderStages::getProgramInfoLog(GLuint programID) const {
   // Get the size of log
   GLsizei logSize = 0;
   getContext().getProgramiv(programID, GL_INFO_LOG_LENGTH, &logSize);
@@ -337,8 +334,7 @@ std::string ShaderStages::getProgramInfoLog(GLuint programID) {
   getContext().getProgramInfoLog(programID, logSize, nullptr, log.data());
 
   // Create actual string from it
-  return std::string(log.begin(), log.end());
+  return {log.begin(), log.end()};
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

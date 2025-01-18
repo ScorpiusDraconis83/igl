@@ -14,10 +14,7 @@
 #include <memory>
 #include <unordered_map>
 
-namespace iglu {
-namespace uniform {
-
-class Encoder;
+namespace iglu::uniform {
 
 // Collection
 //
@@ -126,7 +123,7 @@ struct Collection {
   }
 
  private:
-  //#ifdef WINDOWS_COPY_CTR_WORKAROUND
+  // #ifdef WINDOWS_COPY_CTR_WORKAROUND
   std::unordered_map<igl::NameHandle, std::shared_ptr<Descriptor>> descriptors_;
   // #else
   //   std::unordered_map<igl::NameHandle, std::unique_ptr<Descriptor>> descriptors_;
@@ -134,5 +131,4 @@ struct Collection {
   std::vector<igl::NameHandle> names_;
 };
 
-} // namespace uniform
-} // namespace iglu
+} // namespace iglu::uniform

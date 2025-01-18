@@ -9,21 +9,18 @@
 
 #include <igl/opengl/DestructionGuard.h>
 #include <igl/opengl/Device.h>
-#include <igl/opengl/Errors.h>
 #include <igl/opengl/Framebuffer.h>
 #include <igl/opengl/IContext.h>
-#include <igl/opengl/SamplerState.h>
 #include <igl/opengl/TextureBufferExternal.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 std::shared_ptr<Framebuffer> PlatformDevice::createFramebuffer(const FramebufferDesc& desc,
                                                                Result* outResult) const {
   auto resource = std::make_shared<CustomFramebuffer>(getContext());
   resource->initialize(desc, outResult);
   if (auto resourceTracker = owner_.getResourceTracker()) {
-    resource->initResourceTracker(resourceTracker);
+    resource->initResourceTracker(resourceTracker, desc.debugName);
   }
   return resource;
 }
@@ -44,9 +41,8 @@ std::unique_ptr<TextureBufferExternal> PlatformDevice::createTextureBufferExtern
     GLsizei height,
     TextureFormat format,
     GLsizei numLayers) const {
-  auto textureBuffer = std::make_unique<TextureBufferExternal>(getContext(), format);
+  auto textureBuffer = std::make_unique<TextureBufferExternal>(getContext(), format, usage);
   textureBuffer->setTextureBufferProperties(textureID, target);
-  textureBuffer->setUsage(usage);
   textureBuffer->setTextureProperties(width, height, numLayers);
   if (auto resourceTracker = owner_.getResourceTracker()) {
     textureBuffer->initResourceTracker(resourceTracker);
@@ -55,7 +51,7 @@ std::unique_ptr<TextureBufferExternal> PlatformDevice::createTextureBufferExtern
 }
 
 DestructionGuard PlatformDevice::getDestructionGuard() const {
-  return DestructionGuard(owner_.getSharedContext());
+  return {owner_.getSharedContext()};
 }
 
 IContext& PlatformDevice::getContext() const {
@@ -90,21 +86,21 @@ void PlatformDevice::blitFramebuffer(const std::shared_ptr<IFramebuffer>& src,
     auto srcDepthTexture = src->getDepthAttachment();
     auto dstDepthTexture = dst->getDepthAttachment();
     if ((!srcDepthTexture && dstDepthTexture) || (srcDepthTexture && !dstDepthTexture)) {
-      IGL_ASSERT_MSG(0,
-                     "PlatformDevice::blitFramebuffer: One framebuffer has depth attachment and "
-                     "the other doesn't.\n");
+      IGL_DEBUG_ABORT(
+          "PlatformDevice::blitFramebuffer: One framebuffer has depth attachment and "
+          "the other doesn't.\n");
     }
     if (srcDepthTexture && dstDepthTexture) {
-      auto srcFormat = std::static_pointer_cast<igl::opengl::Texture>(srcDepthTexture)
-                           ->getGLInternalTextureFormat();
-      auto dstFormat = std::static_pointer_cast<igl::opengl::Texture>(dstDepthTexture)
-                           ->getGLInternalTextureFormat();
+      const GLenum srcFormat =
+          static_cast<igl::opengl::Texture*>(srcDepthTexture.get())->getGLInternalTextureFormat();
+      const GLenum dstFormat =
+          static_cast<igl::opengl::Texture*>(dstDepthTexture.get())->getGLInternalTextureFormat();
       if (srcFormat != dstFormat) {
-        IGL_ASSERT_MSG(0,
-                       "PlatformDevice::blitFramebuffer: Mismatch of framebuffer depth attachment "
-                       "formats: %d vs %d\n",
-                       srcFormat,
-                       dstFormat);
+        IGL_DEBUG_ABORT(
+            "PlatformDevice::blitFramebuffer: Mismatch of framebuffer depth attachment "
+            "formats: %d vs %d\n",
+            srcFormat,
+            dstFormat);
       }
     }
   }
@@ -113,28 +109,28 @@ void PlatformDevice::blitFramebuffer(const std::shared_ptr<IFramebuffer>& src,
     auto srcStencilTexture = src->getStencilAttachment();
     auto dstStencilTexture = dst->getStencilAttachment();
     if ((!srcStencilTexture && dstStencilTexture) || (srcStencilTexture && !dstStencilTexture)) {
-      IGL_ASSERT_MSG(0,
-                     "PlatformDevice::blitFramebuffer: One framebuffer has stencil attachment and "
-                     "the other doesn't.\n");
+      IGL_DEBUG_ABORT(
+          "PlatformDevice::blitFramebuffer: One framebuffer has stencil attachment and "
+          "the other doesn't.\n");
     }
     if (srcStencilTexture && dstStencilTexture) {
-      auto srcFormat = std::static_pointer_cast<igl::opengl::Texture>(srcStencilTexture)
-                           ->getGLInternalTextureFormat();
-      auto dstFormat = std::static_pointer_cast<igl::opengl::Texture>(dstStencilTexture)
-                           ->getGLInternalTextureFormat();
+      const GLenum srcFormat =
+          static_cast<igl::opengl::Texture*>(srcStencilTexture.get())->getGLInternalTextureFormat();
+      const GLenum dstFormat =
+          static_cast<igl::opengl::Texture*>(dstStencilTexture.get())->getGLInternalTextureFormat();
       if (srcFormat != dstFormat) {
-        IGL_ASSERT_MSG(0,
-                       "PlatformDevice::blitFramebuffer: Mismatch of framebuffer stencil "
-                       "attachment formats: %d vs %d\n",
-                       srcFormat,
-                       dstFormat);
+        IGL_DEBUG_ABORT(
+            "PlatformDevice::blitFramebuffer: Mismatch of framebuffer stencil "
+            "attachment formats: %d vs %d\n",
+            srcFormat,
+            dstFormat);
       }
     }
   }
 #endif
 
   if (ctx.deviceFeatures().hasInternalFeature(InternalFeatures::FramebufferBlit)) {
-    FramebufferBindingGuard guard(ctx);
+    const FramebufferBindingGuard guard(ctx);
     ctx.bindFramebuffer(GL_DRAW_FRAMEBUFFER, to.getId());
     ctx.bindFramebuffer(GL_READ_FRAMEBUFFER, from.getId());
 
@@ -182,5 +178,4 @@ void PlatformDevice::blitFramebuffer(const std::shared_ptr<IFramebuffer>& src,
                                                outResult);
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

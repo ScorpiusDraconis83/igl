@@ -5,11 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
+#include <igl/opengl/egl/Context.h>
+
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <igl/opengl/ComputeCommandAdapter.h>
 #include <igl/opengl/HWDevice.h>
 #include <igl/opengl/RenderCommandAdapter.h>
-#include <igl/opengl/egl/Context.h>
 
 #include <cassert>
 #include <igl/Macros.h>
@@ -30,7 +34,7 @@ namespace error_checking {
 EGLint checkForEGLErrors(IGL_MAYBE_UNUSED const char* fileName,
                          IGL_MAYBE_UNUSED const char* callerName,
                          IGL_MAYBE_UNUSED size_t lineNum) {
-  EGLint errorCode = eglGetError();
+  const EGLint errorCode = eglGetError();
   if (errorCode != EGL_SUCCESS) {
     IGL_MAYBE_UNUSED const char* errorStr;
     switch (errorCode) {
@@ -53,13 +57,12 @@ EGLint checkForEGLErrors(IGL_MAYBE_UNUSED const char* fileName,
       errorStr = "<unknown EGL error>";
       break;
     }
-    IGL_ASSERT_MSG(false,
-                   "[IGL] EGL error [%s:%zu] in function: %s 0x%04X: %s\n",
-                   fileName,
-                   lineNum,
-                   callerName,
-                   errorCode,
-                   errorStr);
+    IGL_DEBUG_ABORT("[IGL] EGL error [%s:%zu] in function: %s 0x%04X: %s\n",
+                    fileName,
+                    lineNum,
+                    callerName,
+                    errorCode,
+                    errorStr);
   }
   return errorCode;
 }
@@ -69,13 +72,11 @@ EGLint checkForEGLErrors(IGL_MAYBE_UNUSED const char* fileName,
 FOLLY_PUSH_WARNING
 FOLLY_GNU_DISABLE_WARNING("-Wzero-as-null-pointer-constant")
 
-namespace igl {
-namespace opengl {
-namespace egl {
+namespace igl::opengl::egl {
 
 namespace {
 EGLDisplay getDefaultEGLDisplay() {
-  auto display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  auto* display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   CHECK_EGL_ERRORS();
   return display;
 }
@@ -117,7 +118,7 @@ std::pair<EGLDisplay, EGLContext> newEGLContext(EGLDisplay display,
   }
 
   if (!config) {
-    IGL_ASSERT_MSG(0, "config is nullptr");
+    IGL_DEBUG_ABORT("config is nullptr");
     return std::make_pair(EGL_NO_DISPLAY, EGL_NO_CONTEXT);
   }
 
@@ -135,10 +136,10 @@ std::pair<EGLDisplay, EGLContext> newEGLContext(EGLDisplay display,
 EGLConfig chooseConfig(EGLDisplay display) {
   EGLConfig config{nullptr};
   EGLint numConfigs{0};
-  EGLBoolean status = eglChooseConfig(display, attribs, &config, 1, &numConfigs);
+  const EGLBoolean status = eglChooseConfig(display, attribs, &config, 1, &numConfigs);
   CHECK_EGL_ERRORS();
   if (!status) {
-    IGL_ASSERT_MSG(status == EGL_TRUE, "eglChooseConfig failed");
+    IGL_DEBUG_ASSERT(status == EGL_TRUE, "eglChooseConfig failed");
   }
   return config;
 }
@@ -202,9 +203,14 @@ Context::Context(RenderingAPI api,
                  bool offscreen,
                  EGLNativeWindowType window,
                  std::pair<EGLint, EGLint> dimensions) {
+  IGL_DEBUG_ASSERT(
+      (shareContext == EGL_NO_CONTEXT && sharegroup == nullptr) ||
+          (shareContext != EGL_NO_CONTEXT && sharegroup != nullptr &&
+           std::find(sharegroup->begin(), sharegroup->end(), shareContext) != sharegroup->end()),
+      "shareContext and sharegroup values must be consistent");
   EGLConfig config{nullptr};
   auto contextDisplay = newEGLContext(getDefaultEGLDisplay(), shareContext, &config);
-  IGL_ASSERT_MSG(contextDisplay.second != EGL_NO_CONTEXT, "newEGLContext failed");
+  IGL_DEBUG_ASSERT(contextDisplay.second != EGL_NO_CONTEXT, "newEGLContext failed");
 
   contextOwned_ = true;
   api_ = api;
@@ -241,12 +247,12 @@ Context::Context(RenderingAPI api,
   } else {
     sharegroup_ = std::make_shared<std::vector<EGLContext>>();
   }
-  sharegroup_->push_back(context_);
+  sharegroup_->emplace_back(context_);
 
   initialize();
 }
 
-std::unique_ptr<IContext> Context::createShareContext(Result* outResult) {
+std::unique_ptr<IContext> Context::createShareContext(Result* /*outResult*/) {
   return std::make_unique<Context>(*this);
 }
 
@@ -297,7 +303,7 @@ void Context::clearCurrentContext() const {
 }
 
 bool Context::isCurrentContext() const {
-  auto curContext = eglGetCurrentContext();
+  auto* curContext = eglGetCurrentContext();
   return curContext == context_;
   CHECK_EGL_ERRORS();
 }
@@ -362,7 +368,7 @@ void Context::updateSurfaces(EGLSurface readSurface, EGLSurface drawSurface) {
 }
 
 EGLSurface Context::createSurface(NativeWindowType window) {
-  auto surface = eglCreateWindowSurface(display_, chooseConfig(display_), window, nullptr);
+  auto* surface = eglCreateWindowSurface(display_, chooseConfig(display_), window, nullptr);
   CHECK_EGL_ERRORS();
   return surface;
 }
@@ -403,7 +409,41 @@ EGLConfig Context::getConfig() const {
   return config_;
 }
 
-} // namespace egl
-} // namespace opengl
-} // namespace igl
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+EGLImageKHR Context::createImageFromAndroidHardwareBuffer(AHardwareBuffer* hwb) const {
+  EGLClientBuffer clientBuffer = eglGetNativeClientBufferANDROID(hwb);
+  EGLint attribs[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE, EGL_NONE, EGL_NONE};
+
+  EGLDisplay display = this->getDisplay();
+  // eglCreateImageKHR will add a ref to the AHardwareBuffer
+  EGLImageKHR eglImage =
+      eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, clientBuffer, attribs);
+  IGL_LOG_DEBUG("eglCreateImageKHR(%p, %x, %x, %p, {%d, %d, %d, %d, %d})\n",
+                display,
+                EGL_NO_CONTEXT,
+                EGL_NATIVE_BUFFER_ANDROID,
+                clientBuffer,
+                attribs[0],
+                attribs[1],
+                attribs[2],
+                attribs[3],
+                attribs[4]);
+
+  this->checkForErrors(__FUNCTION__, __LINE__);
+
+  IGL_SOFT_ASSERT(this->isCurrentContext() || this->isCurrentSharegroup());
+
+  return eglImage;
+}
+
+void Context::imageTargetTexture(EGLImageKHR eglImage, GLenum target) const {
+  glEGLImageTargetTexture2DOES(target, static_cast<GLeglImageOES>(eglImage));
+  IGL_LOG_DEBUG("glEGLImageTargetTexture2DOES(%u, %#x)\n",
+                GL_TEXTURE_2D,
+                static_cast<GLeglImageOES>(eglImage));
+  this->checkForErrors(__FUNCTION__, __LINE__);
+}
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+
+} // namespace igl::opengl::egl
 FOLLY_POP_WARNING

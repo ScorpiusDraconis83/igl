@@ -15,8 +15,7 @@
 #include <igl/vulkan/VulkanHelpers.h>
 #include <igl/vulkan/VulkanSemaphore.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 /// @brief This class provides a simplified interface for obtaining and submitting Command Buffers,
 /// while providing features to help manage their synchronization.
@@ -24,7 +23,7 @@ class VulkanImmediateCommands final {
  public:
   // The maximum number of command buffers which can simultaneously exist in the system; when we run
   // out of buffers, we stall and wait until an existing buffer becomes available
-  static constexpr uint32_t kMaxCommandBuffers = 16;
+  static constexpr uint32_t kMaxCommandBuffers = 32;
 
   /** @brief Creates an instance of the class for a specific queue family and whether the fences
    * created for each command buffer are exportable (see VulkanFence for more details about the
@@ -61,19 +60,26 @@ class VulkanImmediateCommands final {
     /// @brief Creates a SubmitHandle object from an existing handle
     explicit SubmitHandle(uint64_t handle) :
       bufferIndex_(uint32_t(handle & 0xffffffff)), submitId_(uint32_t(handle >> 32)) {
-      IGL_ASSERT(submitId_);
+      IGL_DEBUG_ASSERT(submitId_);
     }
 
     /// @brief Checks whether the structure is empty and has not been associates with a command
     /// buffer submission yet
-    bool empty() const {
+    [[nodiscard]] bool empty() const {
       return submitId_ == 0;
     }
 
     /// @brief Returns a unique identifiable handle, which is made of the `submitId_` and the
     /// `bufferIndex_` member variables
-    uint64_t handle() const {
+    [[nodiscard]] uint64_t handle() const {
       return (uint64_t(submitId_) << 32) + bufferIndex_;
+    }
+
+    [[nodiscard]] bool operator==(const SubmitHandle& rhs) const {
+      return bufferIndex_ == rhs.bufferIndex_ && submitId_ == rhs.submitId_;
+    }
+    [[nodiscard]] bool operator!=(const SubmitHandle& rhs) const {
+      return !(*this == rhs);
     }
   };
 
@@ -127,12 +133,8 @@ class VulkanImmediateCommands final {
   VkSemaphore acquireLastSubmitSemaphore();
 
   /// @brief Returns the last SubmitHandle, which was submitted when `submit()` was last called
-  SubmitHandle getLastSubmitHandle() const;
-
-  /// @brief Checks whether the SubmitHandle is recycled. A recycled SubmitHandle is a handle that
-  /// has a submit id greater than the submit id associated with the same command buffer stored
-  /// internally in `VulkanImmediateCommands`. A SubmitHandle handle is also recycled if it's empty
-  [[nodiscard]] bool isRecycled(SubmitHandle handle) const;
+  [[nodiscard]] SubmitHandle getLastSubmitHandle() const;
+  [[nodiscard]] SubmitHandle getNextSubmitHandle() const;
 
   /** @brief Checks whether a SubmitHandle is ready. A SubmitHandle is ready if it is recycled or
    * empty. If it has not been recycled and is not empty, a SubmitHandle is ready if the fence
@@ -143,9 +145,9 @@ class VulkanImmediateCommands final {
   [[nodiscard]] bool isReady(SubmitHandle handle) const;
 
   /// @brief If the SubmitHandle is not ready, this function waits for the fence associated with the
-  /// command buffer referred by the handle to become signaled. The maximum wait time is
-  /// `UINT64_MAX` nanoseconds
-  void wait(SubmitHandle handle, uint64_t timeoutNanoseconds = UINT64_MAX);
+  /// command buffer referred by the handle to become signaled. The default wait time is
+  /// `UINT64_MAX` nanoseconds. Returns a result code if the wait was successful or not.
+  VkResult wait(SubmitHandle handle, uint64_t timeoutNanoseconds = UINT64_MAX);
 
   /// @brief Wait for _all_ fences for all command buffers stored in `VulkanImmediateCommands` to
   /// become signaled. The maximum wait time is `UINT64_MAX` nanoseconds
@@ -160,6 +162,10 @@ class VulkanImmediateCommands final {
   /// encoded, and have completed execution by the GPU (their fences have been signaled). Resets the
   /// number of available command buffers.
   void purge();
+  /// @brief Checks whether the SubmitHandle is recycled. A recycled SubmitHandle is a handle that
+  /// has a submit id greater than the submit id associated with the same command buffer stored
+  /// internally in `VulkanImmediateCommands`. A SubmitHandle handle is also recycled if it's empty
+  [[nodiscard]] bool isRecycled(SubmitHandle handle) const;
 
  private:
   const VulkanFunctionTable& vf_;
@@ -171,6 +177,7 @@ class VulkanImmediateCommands final {
 
   /// @brief The last submitted handle. Updated on `submit()`
   SubmitHandle lastSubmitHandle_ = SubmitHandle();
+  SubmitHandle nextSubmitHandle_ = SubmitHandle();
 
   /// @brief The semaphore submitted with the last command buffer. Updated on `submit()`
   VkSemaphore lastSubmitSemaphore_ = VK_NULL_HANDLE;
@@ -184,5 +191,4 @@ class VulkanImmediateCommands final {
   uint32_t submitCounter_ = 1;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

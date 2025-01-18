@@ -51,6 +51,10 @@ bool RenderPipelineDesc::operator!=(const RenderPipelineDesc& other) const {
 }
 
 bool RenderPipelineDesc::operator==(const RenderPipelineDesc& other) const {
+  if (topology != other.topology) {
+    return false;
+  }
+
   if (vertexInputState != other.vertexInputState) {
     return false;
   }
@@ -82,26 +86,34 @@ bool RenderPipelineDesc::operator==(const RenderPipelineDesc& other) const {
     return false;
   }
 
-  if (debugName != other.debugName) {
+  for (size_t i = 0; i != IGL_TEXTURE_SAMPLERS_MAX; i++) {
+    if (immutableSamplers[i] != other.immutableSamplers[i]) {
+      return false;
+    }
+  }
+
+  if (isDynamicBufferMask != other.isDynamicBufferMask) {
     return false;
   }
 
-  return true;
+  return debugName == other.debugName;
 }
 
 /// The underlying assumption for this hash is all of the shared pointers in
 /// this structure can uniquely identify the object they are pointing to.
 /// It is the responsibility of the caller of this function to make sure
 /// that is the case.
-size_t std::hash<RenderPipelineDesc>::operator()(RenderPipelineDesc const& key) const {
+size_t std::hash<RenderPipelineDesc>::operator()(const RenderPipelineDesc& key) const {
   size_t hash = std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(key.vertexInputState.get()));
 
+  hash ^= std::hash<int>()(EnumToValue(key.topology));
   hash ^= std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(key.shaderStages.get()));
   hash ^= std::hash<RenderPipelineDesc::TargetDesc>()(key.targetDesc);
   hash ^= std::hash<int>()(EnumToValue(key.cullMode));
-  hash ^= std::hash<int>()(key.sampleCount);
+  hash ^= std::hash<uint32_t>()(key.sampleCount);
   hash ^= std::hash<int>()(EnumToValue(key.frontFaceWinding));
   hash ^= std::hash<int>()(EnumToValue(key.polygonFillMode));
+  hash ^= std::hash<uint32_t>()(key.isDynamicBufferMask);
   hash ^= std::hash<igl::NameHandle>()(key.debugName);
 
   for (const auto& i : key.vertexUnitSamplerMap) {
@@ -114,15 +126,20 @@ size_t std::hash<RenderPipelineDesc>::operator()(RenderPipelineDesc const& key) 
   }
   for (const auto& i : key.uniformBlockBindingMap) {
     hash ^= std::hash<size_t>()(i.first);
-    hash ^= std::hash<igl::NameHandle>()(i.second.first);
-    hash ^= std::hash<igl::NameHandle>()(i.second.second);
+    for (const auto& names : i.second) {
+      hash ^= std::hash<igl::NameHandle>()(names.first);
+      hash ^= std::hash<igl::NameHandle>()(names.second);
+    }
+  }
+  for (const auto& i : key.immutableSamplers) {
+    hash ^= std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(i.get()));
   }
 
   return hash;
 }
 
 size_t std::hash<RenderPipelineDesc::TargetDesc>::operator()(
-    RenderPipelineDesc::TargetDesc const& key) const {
+    const RenderPipelineDesc::TargetDesc& key) const {
   size_t hash = std::hash<int>()(EnumToValue(key.depthAttachmentFormat));
 
   hash ^= std::hash<int>()(EnumToValue(key.stencilAttachmentFormat));
@@ -136,7 +153,7 @@ size_t std::hash<RenderPipelineDesc::TargetDesc>::operator()(
 }
 
 size_t std::hash<RenderPipelineDesc::TargetDesc::ColorAttachment>::operator()(
-    RenderPipelineDesc::TargetDesc::ColorAttachment const& key) const {
+    const RenderPipelineDesc::TargetDesc::ColorAttachment& key) const {
   size_t hash = std::hash<int>()(EnumToValue(key.textureFormat));
   hash ^= std::hash<uint8_t>()(key.colorWriteMask);
   hash ^= std::hash<bool>()(key.blendEnabled);

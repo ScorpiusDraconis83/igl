@@ -35,7 +35,7 @@
   }
 #define APILOG(format, ...)                 \
   if (apiLogDrawsLeft_ || apiLogEnabled_) { \
-    IGL_DEBUG_LOG(format, ##__VA_ARGS__);   \
+    IGL_LOG_DEBUG(format, ##__VA_ARGS__);   \
   }
 namespace {
 uint32_t logSourceChunk(uint32_t line, const char* string, size_t length) {
@@ -44,7 +44,7 @@ uint32_t logSourceChunk(uint32_t line, const char* string, size_t length) {
   while (length > 0) {
     if (*string == '\r' || *string == '\n') {
       if (printLen > 0) {
-        IGL_DEBUG_LOG("%3u: %.*s\n", line++, printLen, lineString);
+        IGL_LOG_DEBUG("%3u: %.*s\n", line++, printLen, lineString);
       }
       printLen = 0;
       lineString = string + 1;
@@ -55,7 +55,7 @@ uint32_t logSourceChunk(uint32_t line, const char* string, size_t length) {
     --length;
   }
   if (printLen > 0) {
-    IGL_DEBUG_LOG("%3u: %.*s\n", line++, printLen, lineString);
+    IGL_LOG_DEBUG("%3u: %.*s\n", line++, printLen, lineString);
   }
   return line;
 }
@@ -82,36 +82,36 @@ void logSource(const int count, const char** string, const int* length) {
 #define APILOG_SOURCE(count, string, length) static_cast<void>(0)
 #endif // defined(IGL_API_LOG) && (IGL_DEBUG || defined(IGL_FORCE_ENABLE_LOGS))
 
-#define GLCALL(funcName)                                         \
-  IGL_REPORT_ERROR(isCurrentContext() || isCurrentSharegroup()); \
-  callCounter_++;                                                \
+#define GLCALL(funcName)                                        \
+  IGL_SOFT_ASSERT(isCurrentContext() || isCurrentSharegroup()); \
+  callCounter_++;                                               \
   gl##funcName
 
-#define IGLCALL(funcName)                                        \
-  IGL_REPORT_ERROR(isCurrentContext() || isCurrentSharegroup()); \
-  callCounter_++;                                                \
+#define IGLCALL(funcName)                                       \
+  IGL_SOFT_ASSERT(isCurrentContext() || isCurrentSharegroup()); \
+  callCounter_++;                                               \
   igl##funcName
 
-#define GLCALL_WITH_RETURN(ret, funcName)                        \
-  IGL_REPORT_ERROR(isCurrentContext() || isCurrentSharegroup()); \
-  callCounter_++;                                                \
+#define GLCALL_WITH_RETURN(ret, funcName)                       \
+  IGL_SOFT_ASSERT(isCurrentContext() || isCurrentSharegroup()); \
+  callCounter_++;                                               \
   ret = gl##funcName
 
-#define IGLCALL_WITH_RETURN(ret, funcName)                       \
-  IGL_REPORT_ERROR(isCurrentContext() || isCurrentSharegroup()); \
-  callCounter_++;                                                \
+#define IGLCALL_WITH_RETURN(ret, funcName)                      \
+  IGL_SOFT_ASSERT(isCurrentContext() || isCurrentSharegroup()); \
+  callCounter_++;                                               \
   ret = igl##funcName
 
-#define GLCALL_PROC(funcPtr, ...)                                \
-  IGL_REPORT_ERROR(isCurrentContext() || isCurrentSharegroup()); \
-  if (IGL_VERIFY(funcPtr)) {                                     \
-    callCounter_++;                                              \
-    (*funcPtr)(__VA_ARGS__);                                     \
+#define GLCALL_PROC(funcPtr, ...)                               \
+  IGL_SOFT_ASSERT(isCurrentContext() || isCurrentSharegroup()); \
+  if (IGL_DEBUG_VERIFY(funcPtr)) {                              \
+    callCounter_++;                                             \
+    (*funcPtr)(__VA_ARGS__);                                    \
   }
 
 #define GLCALL_PROC_WITH_RETURN(ret, funcPtr, returnOnError, ...) \
-  IGL_REPORT_ERROR(isCurrentContext() || isCurrentSharegroup());  \
-  if (IGL_VERIFY(funcPtr)) {                                      \
+  IGL_SOFT_ASSERT(isCurrentContext() || isCurrentSharegroup());   \
+  if (IGL_DEBUG_VERIFY(funcPtr)) {                                \
     callCounter_++;                                               \
     ret = (*funcPtr)(__VA_ARGS__);                                \
   } else {                                                        \
@@ -126,12 +126,12 @@ void logSource(const int count, const char** string, const int* length) {
     }                                         \
   } while (false)
 #define GL_ASSERT_ERROR(condition, callerName, lineNum, errorCode) \
-  IGL_ASSERT_MSG((condition),                                      \
-                 "[IGL] OpenGL error [%s:%zu] 0x%04X: %s\n",       \
-                 callerName,                                       \
-                 lineNum,                                          \
-                 errorCode,                                        \
-                 GL_ERROR_TO_STRING(errorCode))
+  IGL_DEBUG_ASSERT((condition),                                    \
+                   "[IGL] OpenGL error [%s:%zu] 0x%04X: %s\n",     \
+                   callerName,                                     \
+                   lineNum,                                        \
+                   errorCode,                                      \
+                   GL_ERROR_TO_STRING(errorCode))
 #else
 #define GLCHECK_ERRORS() static_cast<void>(0)
 #define GL_ASSERT_ERROR(condition, callerName, lineNum, errorCode) static_cast<void>(0)
@@ -399,6 +399,7 @@ std::string GLenumToString(GLenum code) {
     RESULT_CASE(GL_ONE_MINUS_SRC_ALPHA)
     RESULT_CASE(GL_ONE_MINUS_SRC_COLOR)
     RESULT_CASE(GL_PACK_ALIGNMENT)
+    RESULT_CASE(GL_PACK_ROW_LENGTH)
     RESULT_CASE(GL_PIXEL_PACK_BUFFER)
     RESULT_CASE(GL_PIXEL_UNPACK_BUFFER)
     RESULT_CASE(GL_POINTS)
@@ -589,6 +590,9 @@ std::string GLenumToString(GLenum code) {
 } // namespace
 #endif // defined(IGL_API_LOG) && (IGL_DEBUG || defined(IGL_FORCE_ENABLE_LOGS))
 
+// Debug logging is not included in code coverage
+// @MARK:COVERAGE_EXCLUDE_START
+
 namespace {
 
 #if IGL_DEBUG || defined(IGL_API_LOG)
@@ -637,9 +641,8 @@ void logDebugMessage(GLenum source,
                      GLsizei length,
                      const GLchar* message) {
   const auto logLevel = severity == GL_DEBUG_SEVERITY_HIGH
-                            ? IGLLogLevel::LOG_ERROR
-                            : (severity == GL_DEBUG_SEVERITY_MEDIUM ? IGLLogLevel::LOG_WARNING
-                                                                    : IGLLogLevel::LOG_INFO);
+                            ? IGLLogError
+                            : (severity == GL_DEBUG_SEVERITY_MEDIUM ? IGLLogWarning : IGLLogInfo);
   IGLLog(logLevel,
          "%s %s %u %s: %.*s\n",
          GLDebugSourceToString(source),
@@ -662,6 +665,9 @@ void logOpenGlDebugMessage(GLenum source,
 #endif // defined(IGL_API_LOG)
 #endif // IGL_DEBUG || defined(IGL_API_LOG)
 } // namespace
+
+// @MARK:COVERAGE_EXCLUDE_END
+
 namespace igl::opengl {
 namespace {
 const char* GLerrorToString(GLenum error) {
@@ -711,9 +717,9 @@ IContext::IContext() : deviceFeatureSet_(*this) {
 }
 
 IContext::~IContext() {
-  IGL_REPORT_ERROR_MSG(refCount_ == 0,
-                       "Dangling IContext reference left behind."
-                       // @fb-only
+  IGL_SOFT_ASSERT(refCount_ == 0,
+                  "Dangling IContext reference left behind."
+                  // @fb-only
   );
   // Clear the zombie guard explicitly so our "secret" stays secret.
   zombieGuard_ = 0;
@@ -737,7 +743,7 @@ void IContext::registerContext(void* glContext, IContext* context) {
 #if IGL_PLATFORM_ANDROID
     IGL_LOG_ERROR(errorMessage);
 #else
-    IGL_ASSERT_MSG(0, errorMessage);
+    IGL_DEBUG_ABORT(errorMessage);
 #endif
   }
   IContext::getExistingContexts().insert({glContext, context});
@@ -777,12 +783,6 @@ void IContext::activeTexture(GLenum texture) {
 void IContext::attachShader(GLuint program, GLuint shader) {
   GLCALL(AttachShader)(program, shader);
   APILOG("glAttachShader(%u, %u)\n", program, shader);
-  GLCHECK_ERRORS();
-}
-
-void IContext::bindAttribLocation(GLuint program, GLuint index, const GLchar* name) {
-  GLCALL(BindAttribLocation)(program, index, name);
-  APILOG("glBindAttribLocation(%u, %u, %s)\n", program, index, name);
   GLCHECK_ERRORS();
 }
 
@@ -841,7 +841,7 @@ void IContext::bindImageTexture(GLuint unit,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::ShaderImageLoadStore)) {
       bindImageTexturerProc_ = iglBindImageTexture;
     }
-    IGL_ASSERT_MSG(bindImageTexturerProc_, "No supported function for glBindImageTexture\n");
+    IGL_DEBUG_ASSERT(bindImageTexturerProc_, "No supported function for glBindImageTexture\n");
   }
   GLCALL_PROC(bindImageTexturerProc_, unit, texture, level, layered, layer, access, format);
   APILOG("glBindImageTexture(%u, %u, %i, %s, %i %s %s)\n",
@@ -864,7 +864,7 @@ void IContext::bindVertexArray(GLuint vao) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::VertexArrayObject)) {
       bindVertexArrayProc_ = iglBindVertexArray;
     }
-    IGL_ASSERT_MSG(bindVertexArrayProc_, "No supported function for glBindVertexArray\n");
+    IGL_DEBUG_ASSERT(bindVertexArrayProc_, "No supported function for glBindVertexArray\n");
   }
   GLCALL_PROC(bindVertexArrayProc_, vao);
   APILOG("glBindVertexArray(%u)\n", vao);
@@ -925,7 +925,7 @@ void IContext::blitFramebuffer(GLint srcX0,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::FramebufferBlit)) {
       blitFramebufferProc_ = iglBlitFramebuffer;
     }
-    IGL_ASSERT_MSG(blitFramebufferProc_, "No supported function for glBlitFramebuffer\n");
+    IGL_DEBUG_ASSERT(blitFramebufferProc_, "No supported function for glBlitFramebuffer\n");
   }
   GLCALL_PROC(
       blitFramebufferProc_, srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
@@ -990,7 +990,7 @@ void IContext::clearDepthf(GLfloat depth) {
     } else {
       clearDepthfProc_ = iglClearDepth;
     }
-    IGL_ASSERT_MSG(clearDepthfProc_, "No supported function for glClearDepthf\n");
+    IGL_DEBUG_ASSERT(clearDepthfProc_, "No supported function for glClearDepthf\n");
   }
 
   GLCALL_PROC(clearDepthfProc_, depth);
@@ -1018,29 +1018,6 @@ void IContext::compileShader(GLuint shader) {
   GLCALL(CompileShader)(shader);
   APILOG("glCompileShader(%u)\n", shader);
   GLCHECK_ERRORS();
-}
-
-void IContext::compressedTexImage1D(IGL_MAYBE_UNUSED GLenum target,
-                                    IGL_MAYBE_UNUSED GLint level,
-                                    IGL_MAYBE_UNUSED GLenum internalformat,
-                                    IGL_MAYBE_UNUSED GLsizei width,
-                                    IGL_MAYBE_UNUSED GLint border,
-                                    IGL_MAYBE_UNUSED GLsizei imageSize,
-                                    IGL_MAYBE_UNUSED const GLvoid* data) {
-#if IGL_OPENGL
-  GLCALL(CompressedTexImage1D)(target, level, internalformat, width, border, imageSize, data);
-  APILOG("glCompressedTexImage1D(%s, %d, %s, %u, %d, %u, %p)\n",
-         GL_ENUM_TO_STRING(target),
-         level,
-         GL_ENUM_TO_STRING(internalformat),
-         width,
-         border,
-         imageSize,
-         data);
-  GLCHECK_ERRORS();
-#else
-  IGL_ASSERT_NOT_IMPLEMENTED();
-#endif
 }
 
 void IContext::compressedTexImage2D(GLenum target,
@@ -1084,7 +1061,8 @@ void IContext::compressedTexImage3D(GLenum target,
         compressedTexImage3DProc_ = iglCompressedTexImage3D;
       }
     }
-    IGL_ASSERT_MSG(compressedTexImage3DProc_, "No supported function for glCompressedTexImage3D\n");
+    IGL_DEBUG_ASSERT(compressedTexImage3DProc_,
+                     "No supported function for glCompressedTexImage3D\n");
   }
   GLCALL_PROC(compressedTexImage3DProc_,
               target,
@@ -1107,29 +1085,6 @@ void IContext::compressedTexImage3D(GLenum target,
          imageSize,
          data);
   GLCHECK_ERRORS();
-}
-
-void IContext::compressedTexSubImage1D(IGL_MAYBE_UNUSED GLenum target,
-                                       IGL_MAYBE_UNUSED GLint level,
-                                       IGL_MAYBE_UNUSED GLint xoffset,
-                                       IGL_MAYBE_UNUSED GLsizei width,
-                                       IGL_MAYBE_UNUSED GLenum format,
-                                       IGL_MAYBE_UNUSED GLsizei imageSize,
-                                       IGL_MAYBE_UNUSED const GLvoid* data) {
-#if IGL_OPENGL
-  GLCALL(CompressedTexSubImage1D)(target, level, xoffset, width, format, imageSize, data);
-  APILOG("glCompressedTexSubImage1D(%s, %d, %d, %u, %s, %u, %p)\n",
-         GL_ENUM_TO_STRING(target),
-         level,
-         xoffset,
-         width,
-         GL_ENUM_TO_STRING(format),
-         imageSize,
-         data);
-  GLCHECK_ERRORS();
-#else
-  IGL_ASSERT_NOT_IMPLEMENTED();
-#endif
 }
 
 void IContext::compressedTexSubImage2D(GLenum target,
@@ -1177,8 +1132,8 @@ void IContext::compressedTexSubImage3D(GLenum target,
         compressedTexSubImage3DProc_ = iglCompressedTexSubImage3D;
       }
     }
-    IGL_ASSERT_MSG(compressedTexSubImage3DProc_,
-                   "No supported function for glCompressedTexSubImage3D\n");
+    IGL_DEBUG_ASSERT(compressedTexSubImage3DProc_,
+                     "No supported function for glCompressedTexSubImage3D\n");
   }
   GLCALL_PROC(compressedTexSubImage3DProc_,
               target,
@@ -1204,27 +1159,6 @@ void IContext::compressedTexSubImage3D(GLenum target,
          GL_ENUM_TO_STRING(format),
          imageSize,
          data);
-  GLCHECK_ERRORS();
-}
-
-void IContext::copyTexImage2D(GLenum target,
-                              GLint level,
-                              GLenum internalFormat,
-                              GLint x,
-                              GLint y,
-                              GLsizei width,
-                              GLsizei height,
-                              GLint border) {
-  GLCALL(CopyTexImage2D)(target, level, internalFormat, x, y, width, height, border);
-  APILOG("glCopyTexImage2D(%s, %d, %s, %d, %d, %u, %u, %d)\n",
-         GL_ENUM_TO_STRING(target),
-         level,
-         GL_ENUM_TO_STRING(internalFormat),
-         x,
-         y,
-         width,
-         height,
-         border);
   GLCHECK_ERRORS();
 }
 
@@ -1293,7 +1227,8 @@ void IContext::debugMessageCallback(PFNIGLDEBUGPROC callback, const void* userPa
         debugMessageCallbackProc_ = iglDebugMessageCallback;
       }
     }
-    IGL_ASSERT_MSG(debugMessageCallbackProc_, "No supported function for glDebugMessageCallback\n");
+    IGL_DEBUG_ASSERT(debugMessageCallbackProc_,
+                     "No supported function for glDebugMessageCallback\n");
   }
 
   GLCALL_PROC(debugMessageCallbackProc_, callback, userParam);
@@ -1319,7 +1254,7 @@ void IContext::debugMessageInsert(GLenum source,
         debugMessageInsertProc_ = iglDebugMessageInsert;
       }
     }
-    IGL_ASSERT_MSG(debugMessageInsertProc_, "No supported function for glDebugMessageInsert\n");
+    IGL_DEBUG_ASSERT(debugMessageInsertProc_, "No supported function for glDebugMessageInsert\n");
   }
 
   GLCALL_PROC(debugMessageInsertProc_, source, type, id, severity, length, buf);
@@ -1334,7 +1269,7 @@ void IContext::debugMessageInsert(GLenum source,
 }
 
 void IContext::deleteBuffers(GLsizei n, const GLuint* buffers) {
-  if (isDestructionAllowed() && IGL_VERIFY(buffers != nullptr)) {
+  if (isDestructionAllowed() && IGL_DEBUG_VERIFY(buffers != nullptr)) {
     if (shouldQueueAPI()) {
       deletionQueues_.queueDeleteBuffers(n, buffers);
     } else {
@@ -1360,7 +1295,7 @@ void IContext::unbindBuffer(GLenum target) {
 }
 
 void IContext::deleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
-  if (isDestructionAllowed() && IGL_VERIFY(framebuffers != nullptr)) {
+  if (isDestructionAllowed() && IGL_DEBUG_VERIFY(framebuffers != nullptr)) {
     if (shouldQueueAPI()) {
       deletionQueues_.queueDeleteFramebuffers(n, framebuffers);
     } else {
@@ -1384,7 +1319,7 @@ void IContext::deleteProgram(GLuint program) {
 }
 
 void IContext::deleteRenderbuffers(GLsizei n, const GLuint* renderbuffers) {
-  if (isDestructionAllowed() && IGL_VERIFY(renderbuffers != nullptr)) {
+  if (isDestructionAllowed() && IGL_DEBUG_VERIFY(renderbuffers != nullptr)) {
     if (shouldQueueAPI()) {
       deletionQueues_.queueDeleteRenderbuffers(n, renderbuffers);
     } else {
@@ -1404,9 +1339,9 @@ void IContext::deleteVertexArrays(GLsizei n, const GLuint* vertexArrays) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::VertexArrayObject)) {
       deleteVertexArraysProc_ = iglDeleteVertexArrays;
     }
-    IGL_ASSERT_MSG(deleteVertexArraysProc_, "No supported function for glDeleteVertexArrays\n");
+    IGL_DEBUG_ASSERT(deleteVertexArraysProc_, "No supported function for glDeleteVertexArrays\n");
   }
-  if (isDestructionAllowed() && IGL_VERIFY(vertexArrays != nullptr)) {
+  if (isDestructionAllowed() && IGL_DEBUG_VERIFY(vertexArrays != nullptr)) {
     if (shouldQueueAPI()) {
       deletionQueues_.queueDeleteVertexArrays(n, vertexArrays);
     } else {
@@ -1438,7 +1373,7 @@ void IContext::deleteSync(GLsync sync) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::Sync)) {
       deleteSyncProc_ = iglDeleteSync;
     }
-    IGL_ASSERT_MSG(deleteSyncProc_, "No supported function for glDeleteSync\n");
+    IGL_DEBUG_ASSERT(deleteSyncProc_, "No supported function for glDeleteSync\n");
   }
 
   GLCALL_PROC(deleteSyncProc_, sync);
@@ -1505,6 +1440,32 @@ void IContext::drawArrays(GLenum mode, GLint first, GLsizei count) {
   APILOG_DEC_DRAW_COUNT();
 }
 
+void IContext::drawArraysIndirect(GLenum mode, const GLvoid* indirect) {
+  drawCallCount_++;
+
+  IGL_PROFILER_ZONE_GPU_COLOR_OGL("drawArraysIndirect()", IGL_PROFILER_COLOR_DRAW);
+
+  IGLCALL(DrawArraysIndirect)(mode, indirect);
+  APILOG("glDrawArraysIndirect(%s, %p)\n", GL_ENUM_TO_STRING(mode), indirect);
+  GLCHECK_ERRORS();
+  APILOG_DEC_DRAW_COUNT();
+}
+
+void IContext::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
+  drawCallCount_++;
+
+  IGL_PROFILER_ZONE_GPU_OGL("drawArraysInstanced()");
+
+  IGLCALL(DrawArraysInstanced)(mode, first, count, instancecount);
+  APILOG("glDrawArraysInstanced(%s, %d, %u, %u)\n",
+         GL_ENUM_TO_STRING(mode),
+         first,
+         count,
+         instancecount);
+  GLCHECK_ERRORS();
+  APILOG_DEC_DRAW_COUNT();
+}
+
 void IContext::drawBuffers(GLsizei n, GLenum* buffers) {
   if (drawBuffersProc_ == nullptr) {
     if (deviceFeatureSet_.hasFeature(DeviceFeatures::MultipleRenderTargets)) {
@@ -1516,7 +1477,7 @@ void IContext::drawBuffers(GLsizei n, GLenum* buffers) {
         drawBuffersProc_ = iglDrawBuffers;
       }
     }
-    IGL_ASSERT_MSG(drawBuffersProc_, "No supported function for glDrawBuffers\n");
+    IGL_DEBUG_ASSERT(drawBuffersProc_, "No supported function for glDrawBuffers\n");
   }
   IGL_PROFILER_ZONE_GPU_COLOR_OGL("drawBuffers()", IGL_PROFILER_COLOR_DRAW);
 
@@ -1537,6 +1498,27 @@ void IContext::drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoi
          count,
          GL_ENUM_TO_STRING(type),
          indices);
+  GLCHECK_ERRORS();
+  APILOG_DEC_DRAW_COUNT();
+}
+
+void IContext::drawElementsInstanced(GLenum mode,
+                                     GLsizei count,
+                                     GLenum type,
+                                     const GLvoid* indices,
+                                     GLsizei instancecount) {
+  drawCallCount_++;
+
+  IGL_PROFILER_ZONE_GPU_COLOR_OGL("drawElementsInstanced()", IGL_PROFILER_COLOR_DRAW);
+
+  IGLCALL(DrawElementsInstanced)(mode, count, type, indices, instancecount);
+
+  APILOG("glDrawElementsInstanced(%s, %u, %s, %p, %u)\n",
+         GL_ENUM_TO_STRING(mode),
+         count,
+         GL_ENUM_TO_STRING(type),
+         indices,
+         instancecount);
   GLCHECK_ERRORS();
   APILOG_DEC_DRAW_COUNT();
 }
@@ -1576,7 +1558,7 @@ GLsync IContext::fenceSync(GLenum condition, GLbitfield flags) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::Sync)) {
       fenceSyncProc_ = iglFenceSync;
     }
-    IGL_ASSERT_MSG(fenceSyncProc_, "No supported function for glFenceSync\n");
+    IGL_DEBUG_ASSERT(fenceSyncProc_, "No supported function for glFenceSync\n");
   }
 
   GLsync sync;
@@ -1642,8 +1624,8 @@ void IContext::framebufferTexture2DMultisample(GLenum target,
     } else if (deviceFeatureSet_.hasExtension(Extensions::MultiSampleImg)) {
       framebufferTexture2DMultisampleProc_ = iglFramebufferTexture2DMultisampleIMG;
     }
-    IGL_ASSERT_MSG(framebufferTexture2DMultisampleProc_,
-                   "No supported function for glFramebufferTexture2DMultisample\n");
+    IGL_DEBUG_ASSERT(framebufferTexture2DMultisampleProc_,
+                     "No supported function for glFramebufferTexture2DMultisample\n");
   }
 
   if (maxSamples_ == -1 && framebufferTexture2DMultisampleProc_ != nullptr) {
@@ -1712,7 +1694,7 @@ void IContext::polygonFillMode(IGL_MAYBE_UNUSED GLenum mode) {
   APILOG("glPolygonMode(%s)\n", GL_ENUM_TO_STRING(mode));
   GLCHECK_ERRORS();
 #else
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
 #endif
 }
 
@@ -1761,7 +1743,7 @@ void IContext::genVertexArrays(GLsizei n, GLuint* vertexArrays) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::VertexArrayObject)) {
       genVertexArraysProc_ = iglGenVertexArrays;
     }
-    IGL_ASSERT_MSG(genVertexArraysProc_, "No supported function for glGenVertexArrays\n");
+    IGL_DEBUG_ASSERT(genVertexArraysProc_, "No supported function for glGenVertexArrays\n");
   }
   GLCALL_PROC(genVertexArraysProc_, n, vertexArrays);
   APILOG("glGenVertexArrays(%u, %p) = %u\n",
@@ -1871,15 +1853,6 @@ void IContext::getActiveUniformBlockName(GLuint program,
   GLCHECK_ERRORS();
 }
 
-void IContext::getAttachedShaders(GLuint program,
-                                  GLsizei maxcount,
-                                  GLsizei* count,
-                                  GLuint* shaders) const {
-  GLCALL(GetAttachedShaders)(program, maxcount, count, shaders);
-  APILOG("glGetAttachedShaders(%u, %u, %p, %p)\n", program, maxcount, count, shaders);
-  GLCHECK_ERRORS();
-}
-
 GLint IContext::getAttribLocation(GLuint program, const GLchar* name) const {
   GLint ret;
 
@@ -1931,7 +1904,7 @@ GLuint IContext::getDebugMessageLog(GLuint count,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::DebugMessageCallback)) {
       getDebugMessageLogProc_ = iglGetDebugMessageLog;
     }
-    IGL_ASSERT_MSG(getDebugMessageLogProc_, "No supported function for glGetDebugMessageLog\n");
+    IGL_DEBUG_ASSERT(getDebugMessageLogProc_, "No supported function for glGetDebugMessageLog\n");
   }
   GLuint ret = 0;
   GLCALL_PROC_WITH_RETURN(ret,
@@ -1956,15 +1929,6 @@ GLuint IContext::getDebugMessageLog(GLuint count,
          messageLog);
   GLCHECK_ERRORS();
   return ret;
-}
-
-void IContext::getFloatv(GLenum pname, GLfloat* params) const {
-  GLCALL(GetFloatv)(pname, params);
-  APILOG("glGetFloatv(%s, %p) = %f\n",
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0.f : *params);
-  GLCHECK_ERRORS();
 }
 
 void IContext::getFramebufferAttachmentParameteriv(GLenum target,
@@ -2031,29 +1995,6 @@ void IContext::getProgramInfoLog(GLuint program,
   GLCHECK_ERRORS();
 }
 
-void IContext::getProgramResourceiv(GLuint program,
-                                    GLenum programInterface,
-                                    GLuint index,
-                                    GLsizei propCount,
-                                    const GLenum* props,
-                                    GLsizei count,
-                                    GLsizei* length,
-                                    GLint* params) const {
-  IGLCALL(GetProgramResourceiv)
-  (program, programInterface, index, propCount, props, count, length, params);
-  APILOG("glGetProgramResourceiv(%u, %s, %u, %u, %p, %u, %p, %p) = (%u, %d)\n",
-         program,
-         GL_ENUM_TO_STRING(programInterface),
-         propCount,
-         props,
-         count,
-         length,
-         params,
-         length == nullptr ? 0 : *length,
-         params == nullptr ? 0 : *params);
-  GLCHECK_ERRORS();
-}
-
 GLuint IContext::getProgramResourceIndex(GLuint program,
                                          GLenum programInterface,
                                          const GLchar* name) const {
@@ -2091,16 +2032,6 @@ void IContext::getProgramResourceName(GLuint program,
   GLCHECK_ERRORS();
 }
 
-void IContext::getRenderbufferParameteriv(GLenum target, GLenum pname, GLint* params) const {
-  IGLCALL(GetRenderbufferParameteriv)(target, pname, params);
-  APILOG("glGetRenderbufferParameteriv(%s, %s, %p) = %d\n",
-         GL_ENUM_TO_STRING(target),
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0 : *params);
-  GLCHECK_ERRORS();
-}
-
 void IContext::getShaderiv(GLuint shader, GLenum pname, GLint* params) const {
   GLCALL(GetShaderiv)(shader, pname, params);
   APILOG("glGetShaderiv(%u, %s, %p) = %d\n",
@@ -2128,38 +2059,6 @@ void IContext::getShaderInfoLog(GLuint shader,
   GLCHECK_ERRORS();
 }
 
-void IContext::getShaderPrecisionFormat(GLenum shadertype,
-                                        GLenum precisiontype,
-                                        GLint* range,
-                                        GLint* precision) const {
-  GLCALL(GetShaderPrecisionFormat)(shadertype, precisiontype, range, precision);
-  APILOG("glGetShaderPrecisionFormat(%s, %s, %p, %p) = (%d, %d)\n",
-         GL_ENUM_TO_STRING(shadertype),
-         GL_ENUM_TO_STRING(precisiontype),
-         range,
-         precision,
-         range == nullptr ? 0 : *range,
-         precision == nullptr ? 0 : *precision);
-  GLCHECK_ERRORS();
-}
-
-void IContext::getShaderSource(GLuint shader,
-                               GLsizei bufsize,
-                               GLsizei* length,
-                               GLchar* source) const {
-  GLCALL(GetShaderSource)(shader, bufsize, length, source);
-  APILOG("glGetShaderSource(%u, %u, %p, %p) = %.*s\n",
-         shader,
-         bufsize,
-         length,
-         source,
-         static_cast<int>(length == nullptr
-                              ? (source == nullptr ? 0 : static_cast<int>(std::strlen(source)))
-                              : *length),
-         source == nullptr ? "" : source);
-  GLCHECK_ERRORS();
-}
-
 const GLubyte* IContext::getString(GLenum name) const {
   const GLubyte* ret;
 
@@ -2170,7 +2069,7 @@ const GLubyte* IContext::getString(GLenum name) const {
   return ret;
 }
 
-const GLubyte* IContext::getStringi(GLenum name, GLint index) const {
+const GLubyte* IContext::getStringi(GLenum name, GLuint index) const {
   const GLubyte* ret;
 
   IGLCALL_WITH_RETURN(ret, GetStringi)(name, index);
@@ -2196,7 +2095,7 @@ void IContext::getSynciv(GLsync sync,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::Sync)) {
       getSyncivProc_ = iglGetSynciv;
     }
-    IGL_ASSERT_MSG(getSyncivProc_, "No supported function for glGetSynciv\n");
+    IGL_DEBUG_ASSERT(getSyncivProc_, "No supported function for glGetSynciv\n");
   }
   GLCALL_PROC(getSyncivProc_, sync, pname, bufSize, length, values);
   APILOG("glGetSynciv(%p, %s, %u, %p, %p) = %d\n",
@@ -2206,36 +2105,6 @@ void IContext::getSynciv(GLsync sync,
          length,
          values,
          values == nullptr ? 0 : *values);
-  GLCHECK_ERRORS();
-}
-
-void IContext::getTexParameterfv(GLenum target, GLenum pname, GLfloat* params) const {
-  GLCALL(GetTexParameterfv)(target, pname, params);
-  APILOG("glGetTexParameterfv(%s, %s, %p) = %f\n",
-         GL_ENUM_TO_STRING(target),
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0.f : *params);
-  GLCHECK_ERRORS();
-}
-
-void IContext::getTexParameteriv(GLenum target, GLenum pname, GLint* params) const {
-  GLCALL(GetTexParameteriv)(target, pname, params);
-  APILOG("glGetTexParameteriv(%s, %s, %p) = %d\n",
-         GL_ENUM_TO_STRING(target),
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0 : *params);
-  GLCHECK_ERRORS();
-}
-
-void IContext::getUniformfv(GLuint program, GLint location, GLfloat* params) const {
-  GLCALL(GetUniformfv)(program, location, params);
-  APILOG("glGetUniformfv(%u, %d, %p) = %f\n",
-         program,
-         location,
-         params,
-         params == nullptr ? 0.f : *params);
   GLCHECK_ERRORS();
 }
 
@@ -2249,14 +2118,6 @@ void IContext::getUniformiv(GLuint program, GLint location, GLint* params) const
   GLCHECK_ERRORS();
 }
 
-GLuint IContext::getUniformBlockIndex(GLuint program, const GLchar* name) const {
-  GLuint ret = GL_INVALID_INDEX;
-  IGLCALL_WITH_RETURN(ret, GetUniformBlockIndex)(program, name);
-  APILOG("glGetUniformBlockIndex(%u, %s) = %u\n", program, name, ret);
-  GLCHECK_ERRORS();
-  return ret;
-}
-
 GLint IContext::getUniformLocation(GLuint program, const GLchar* name) const {
   GLint ret;
 
@@ -2265,32 +2126,6 @@ GLint IContext::getUniformLocation(GLuint program, const GLchar* name) const {
   GLCHECK_ERRORS();
 
   return ret;
-}
-
-void IContext::getVertexAttribfv(GLuint index, GLenum pname, GLfloat* params) const {
-  GLCALL(GetVertexAttribfv)(index, pname, params);
-  APILOG("glGetVertexAttribfv(%u, %s, %p) = %f\n",
-         index,
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0.f : *params);
-  GLCHECK_ERRORS();
-}
-
-void IContext::getVertexAttribiv(GLuint index, GLenum pname, GLint* params) const {
-  GLCALL(GetVertexAttribiv)(index, pname, params);
-  APILOG("glGetVertexAttribiv(%u, %s, %p) = %d\n",
-         index,
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0 : *params);
-  GLCHECK_ERRORS();
-}
-
-void IContext::hint(GLenum target, GLenum mode) {
-  GLCALL(Hint)(target, mode);
-  APILOG("glHint(%s, %s)\n", GL_ENUM_TO_STRING(target), GL_ENUM_TO_STRING(mode));
-  GLCHECK_ERRORS();
 }
 
 void IContext::importMemoryFd(GLuint memory, GLuint64 size, GLenum handleType, GLint fd) {
@@ -2312,8 +2147,8 @@ void IContext::invalidateFramebuffer(IGL_MAYBE_UNUSED GLenum target,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::InvalidateFramebuffer)) {
       invalidateFramebufferProc_ = iglInvalidateFramebuffer;
     }
-    IGL_ASSERT_MSG(invalidateFramebufferProc_,
-                   "No supported function for glInvalidateFramebuffer\n");
+    IGL_DEBUG_ASSERT(invalidateFramebufferProc_,
+                     "No supported function for glInvalidateFramebuffer\n");
   }
   GLCALL_PROC(invalidateFramebufferProc_, target, numAttachments, attachments);
   APILOG("glInvalidateFramebuffer(%s, %u, %p)\n",
@@ -2323,61 +2158,11 @@ void IContext::invalidateFramebuffer(IGL_MAYBE_UNUSED GLenum target,
   GLCHECK_ERRORS();
 }
 
-GLboolean IContext::isBuffer(GLuint buffer) {
-  GLboolean ret;
-
-  GLCALL_WITH_RETURN(ret, IsBuffer)(buffer);
-  APILOG("glIsBuffer(%u) = %s\n", buffer, GL_BOOL_TO_STRING(ret));
-  GLCHECK_ERRORS();
-
-  return ret;
-}
-
 GLboolean IContext::isEnabled(GLenum cap) {
   GLboolean ret;
 
   GLCALL_WITH_RETURN(ret, IsEnabled)(cap);
   APILOG("glIsEnabled(%s) = %s\n", GL_ENUM_TO_STRING(cap), GL_BOOL_TO_STRING(ret));
-  GLCHECK_ERRORS();
-
-  return ret;
-}
-
-GLboolean IContext::isFramebuffer(GLuint framebuffer) {
-  GLboolean ret;
-
-  IGLCALL_WITH_RETURN(ret, IsFramebuffer)(framebuffer);
-  APILOG("glIsFramebuffer(%u) = %s\n", framebuffer, GL_BOOL_TO_STRING(ret));
-  GLCHECK_ERRORS();
-
-  return ret;
-}
-
-GLboolean IContext::isProgram(GLuint program) {
-  GLboolean ret;
-
-  GLCALL_WITH_RETURN(ret, IsProgram)(program);
-  APILOG("glIsProgram(%u) = %s\n", program, GL_BOOL_TO_STRING(ret));
-  GLCHECK_ERRORS();
-
-  return ret;
-}
-
-GLboolean IContext::isRenderbuffer(GLuint renderbuffer) {
-  GLboolean ret;
-
-  GLCALL_WITH_RETURN(ret, IsRenderbuffer)(renderbuffer);
-  APILOG("glIsRenderbuffer(%u) = %s\n", renderbuffer, GL_BOOL_TO_STRING(ret));
-  GLCHECK_ERRORS();
-
-  return ret;
-}
-
-GLboolean IContext::isShader(GLuint shader) {
-  GLboolean ret;
-
-  GLCALL_WITH_RETURN(ret, IsShader)(shader);
-  APILOG("glIsShader(%u) = %s\n", shader, GL_BOOL_TO_STRING(ret));
   GLCHECK_ERRORS();
 
   return ret;
@@ -2391,12 +2176,6 @@ GLboolean IContext::isTexture(GLuint texture) {
   GLCHECK_ERRORS();
 
   return ret;
-}
-
-void IContext::lineWidth(GLfloat width) {
-  GLCALL(LineWidth)(width);
-  APILOG("glLineWidth(%f)\n", width);
-  GLCHECK_ERRORS();
 }
 
 void IContext::linkProgram(GLuint program) {
@@ -2438,7 +2217,7 @@ void* IContext::mapBufferRange(GLenum target,
     } else if (deviceFeatureSet_.hasFeature(DeviceFeatures::MapBufferRange)) {
       mapBufferRangeProc_ = iglMapBufferRange;
     }
-    IGL_ASSERT_MSG(mapBufferRangeProc_, "No supported function for glMapBufferRange\n");
+    IGL_DEBUG_ASSERT(mapBufferRangeProc_, "No supported function for glMapBufferRange\n");
   }
   void* ret = nullptr;
   GLCALL_PROC_WITH_RETURN(ret, mapBufferRangeProc_, nullptr, target, offset, length, access);
@@ -2463,7 +2242,7 @@ void IContext::objectLabel(GLenum identifier, GLuint name, GLsizei length, const
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::DebugLabel)) {
       objectLabelProc_ = iglObjectLabel;
     }
-    IGL_ASSERT_MSG(objectLabelProc_, "No supported function for glObjectLabel\n");
+    IGL_DEBUG_ASSERT(objectLabelProc_, "No supported function for glObjectLabel\n");
   }
   GLCALL_PROC(objectLabelProc_, identifier, name, length, label);
   APILOG("glObjectLabel(%s, %u, %u, %s)\n", GL_ENUM_TO_STRING(identifier), name, length, label);
@@ -2476,9 +2255,20 @@ void IContext::pixelStorei(GLenum pname, GLint param) {
   GLCHECK_ERRORS();
 }
 
-void IContext::polygonOffset(GLfloat factor, GLfloat units) {
-  GLCALL(PolygonOffset)(factor, units);
-  APILOG("glPolygonOffset(%f, %f)\n", factor, units);
+void IContext::polygonOffsetClamp(GLfloat factor, GLfloat units, float clamp) {
+  const bool hasPolygonOffsetClamp = deviceFeatureSet_.hasExtension(Extensions::PolygonOffsetClamp);
+
+  if (!hasPolygonOffsetClamp) {
+    IGL_DEBUG_ASSERT(clamp == 0, "PolygonOffsetClamp is not supported\n");
+  }
+
+  if (clamp == 0 || !hasPolygonOffsetClamp) {
+    GLCALL(PolygonOffset)(factor, units);
+    APILOG("glPolygonOffset(%f, %f)\n", factor, units);
+  } else {
+    iglPolygonOffsetClamp(factor, units, clamp);
+    APILOG("glPolygonOffsetClamp(%f, %f, %f)\n", factor, units, clamp);
+  }
   GLCHECK_ERRORS();
 }
 
@@ -2499,7 +2289,7 @@ void IContext::pushDebugGroup(GLenum source, GLuint id, GLsizei length, const GL
         getIntegerv(GL_MAX_DEBUG_GROUP_STACK_DEPTH, &maxDebugStackSize_);
       }
     }
-    IGL_ASSERT_MSG(pushDebugGroupProc_, "No supported function for glPushDebugGroup\n");
+    IGL_DEBUG_ASSERT(pushDebugGroupProc_, "No supported function for glPushDebugGroup\n");
   }
 
   if (++debugStackSize_ < maxDebugStackSize_) {
@@ -2525,7 +2315,7 @@ void IContext::popDebugGroup() {
         popDebugGroupProc_ = iglPopDebugGroup;
       }
     }
-    IGL_ASSERT_MSG(popDebugGroupProc_, "No supported function for glPopDebugGroup\n");
+    IGL_DEBUG_ASSERT(popDebugGroupProc_, "No supported function for glPopDebugGroup\n");
   }
 
   if (debugStackSize_ < maxDebugStackSize_ && maxDebugStackSize_ > 0) {
@@ -2557,12 +2347,6 @@ void IContext::readPixels(GLint x,
          GL_ENUM_TO_STRING(format),
          GL_ENUM_TO_STRING(type),
          pixels);
-  GLCHECK_ERRORS();
-}
-
-void IContext::releaseShaderCompiler() {
-  GLCALL(ReleaseShaderCompiler)();
-  APILOG("glReleaseShaderCompiler()\n");
   GLCHECK_ERRORS();
 }
 
@@ -2598,8 +2382,8 @@ void IContext::renderbufferStorageMultisample(GLenum target,
         renderbufferStorageMultisampleProc_ = iglRenderbufferStorageMultisampleAPPLE;
       }
     }
-    IGL_ASSERT_MSG(renderbufferStorageMultisampleProc_,
-                   "No supported function for glRenderbufferStorageMultisampleProc\n");
+    IGL_DEBUG_ASSERT(renderbufferStorageMultisampleProc_,
+                     "No supported function for glRenderbufferStorageMultisampleProc\n");
   }
 
   GLCALL_PROC(renderbufferStorageMultisampleProc_, target, samples, internalformat, width, height);
@@ -2650,12 +2434,6 @@ void IContext::framebufferTextureMultisampleMultiview(GLenum target,
   GLCHECK_ERRORS();
 }
 
-void IContext::sampleCoverage(GLfloat value, GLboolean invert) {
-  GLCALL(SampleCoverage)(value, invert);
-  APILOG("glSampleCoverage(%f, %s)\n", value, GL_BOOL_TO_STRING(invert));
-  GLCHECK_ERRORS();
-}
-
 void IContext::scissor(GLint x, GLint y, GLsizei width, GLsizei height) {
   GLCALL(Scissor)(x, y, width, height);
   APILOG("glScissor(%d, %d, %u, %u)\n", x, y, width, height);
@@ -2673,21 +2451,6 @@ void IContext::setEnabled(bool shouldEnable, GLenum cap) {
   GLCHECK_ERRORS();
 }
 
-void IContext::shaderBinary(GLsizei n,
-                            const GLuint* shaders,
-                            GLenum binaryformat,
-                            const GLvoid* binary,
-                            GLsizei length) {
-  GLCALL(ShaderBinary)(n, shaders, binaryformat, binary, length);
-  APILOG("glShaderBinary(%u, %p, %s, %p, %u)\n",
-         n,
-         shaders,
-         GL_ENUM_TO_STRING(binaryformat),
-         binary,
-         length);
-  GLCHECK_ERRORS();
-}
-
 void IContext::shaderSource(GLuint shader,
                             GLsizei count,
                             const GLchar** string,
@@ -2695,12 +2458,6 @@ void IContext::shaderSource(GLuint shader,
   GLCALL(ShaderSource)(shader, count, string, length);
   APILOG("glShaderSource(%d, %u, %p, %p)\n", shader, count, string, length);
   APILOG_SOURCE(count, string, length);
-  GLCHECK_ERRORS();
-}
-
-void IContext::stencilFunc(GLenum func, GLint ref, GLuint mask) {
-  GLCALL(StencilFunc)(func, ref, mask);
-  APILOG("glStencilFunc(%s, %d, 0x%x)\n", GL_ENUM_TO_STRING(func), ref, mask);
   GLCHECK_ERRORS();
 }
 
@@ -2726,15 +2483,6 @@ void IContext::stencilMaskSeparate(GLenum face, GLuint mask) {
   GLCHECK_ERRORS();
 }
 
-void IContext::stencilOp(GLenum fail, GLenum zfail, GLenum zpass) {
-  GLCALL(StencilOp)(fail, zfail, zpass);
-  APILOG("glStencilOp(%s, %s, %s)\n",
-         GL_ENUM_TO_STRING(fail),
-         GL_ENUM_TO_STRING(zfail),
-         GL_ENUM_TO_STRING(zpass));
-  GLCHECK_ERRORS();
-}
-
 void IContext::stencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum zpass) {
   GLCALL(StencilOpSeparate)(face, fail, zfail, zpass);
   APILOG("glStencilOpSeparate(%s, %s, %s, %s)\n",
@@ -2743,53 +2491,6 @@ void IContext::stencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum 
          GL_ENUM_TO_STRING(zfail),
          GL_ENUM_TO_STRING(zpass));
   GLCHECK_ERRORS();
-}
-void IContext::texImage1D(IGL_MAYBE_UNUSED GLenum target,
-                          IGL_MAYBE_UNUSED GLint level,
-                          IGL_MAYBE_UNUSED GLint internalformat,
-                          IGL_MAYBE_UNUSED GLsizei width,
-                          IGL_MAYBE_UNUSED GLint border,
-                          IGL_MAYBE_UNUSED GLenum format,
-                          IGL_MAYBE_UNUSED GLenum type,
-                          IGL_MAYBE_UNUSED const GLvoid* data) {
-#if IGL_OPENGL
-  GLCALL(TexImage1D)(target, level, internalformat, width, border, format, type, data);
-  APILOG("glTexImage1D(%s, %d, %s, %u, %d, %s, %s, 0x%x)\n",
-         GL_ENUM_TO_STRING(target),
-         level,
-         GL_ENUM_TO_STRING(internalformat),
-         width,
-         border,
-         GL_ENUM_TO_STRING(format),
-         GL_ENUM_TO_STRING(type),
-         data);
-  GLCHECK_ERRORS();
-#else
-  IGL_ASSERT_NOT_IMPLEMENTED();
-#endif
-}
-
-void IContext::texSubImage1D(IGL_MAYBE_UNUSED GLenum target,
-                             IGL_MAYBE_UNUSED GLint level,
-                             IGL_MAYBE_UNUSED GLint xoffset,
-                             IGL_MAYBE_UNUSED GLsizei width,
-                             IGL_MAYBE_UNUSED GLenum format,
-                             IGL_MAYBE_UNUSED GLenum type,
-                             IGL_MAYBE_UNUSED const GLvoid* pixels) {
-#if IGL_OPENGL
-  GLCALL(TexSubImage1D)(target, level, xoffset, width, format, type, pixels);
-  APILOG("glTexSubImage1D(%s, %d, %d, %u, %s, %s, 0x%x)\n",
-         GL_ENUM_TO_STRING(target),
-         level,
-         xoffset,
-         width,
-         GL_ENUM_TO_STRING(format),
-         GL_ENUM_TO_STRING(type),
-         pixels);
-  GLCHECK_ERRORS();
-#else
-  IGL_ASSERT_NOT_IMPLEMENTED();
-#endif
 }
 
 void IContext::texImage2D(GLenum target,
@@ -2815,27 +2516,6 @@ void IContext::texImage2D(GLenum target,
   GLCHECK_ERRORS();
 }
 
-void IContext::texStorage1D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width) {
-  if (texStorage1DProc_ == nullptr) {
-    if (deviceFeatureSet_.hasInternalRequirement(InternalRequirement::TexStorageExtReq)) {
-      if (deviceFeatureSet_.hasExtension(Extensions::TexStorage)) {
-        texStorage1DProc_ = iglTexStorage1DEXT;
-      }
-    } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::TexStorage)) {
-      texStorage1DProc_ = iglTexStorage1D;
-    }
-    IGL_ASSERT_MSG(texStorage1DProc_, "No supported function for glTexStorage1D\n");
-  }
-
-  GLCALL_PROC(texStorage1DProc_, target, levels, internalformat, width);
-  APILOG("TexStorage1D(%s, %u, %s, %u)\n",
-         GL_ENUM_TO_STRING(target),
-         levels,
-         GL_ENUM_TO_STRING(internalformat),
-         width);
-  GLCHECK_ERRORS();
-}
-
 void IContext::texStorage2D(GLenum target,
                             GLsizei levels,
                             GLenum internalformat,
@@ -2849,7 +2529,7 @@ void IContext::texStorage2D(GLenum target,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::TexStorage)) {
       texStorage2DProc_ = iglTexStorage2D;
     }
-    IGL_ASSERT_MSG(texStorage2DProc_, "No supported function for glTexStorage2D\n");
+    IGL_DEBUG_ASSERT(texStorage2DProc_, "No supported function for glTexStorage2D\n");
   }
 
   GLCALL_PROC(texStorage2DProc_, target, levels, internalformat, width, height);
@@ -2876,7 +2556,7 @@ void IContext::texStorage3D(GLenum target,
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::TexStorage)) {
       texStorage3DProc_ = iglTexStorage3D;
     }
-    IGL_ASSERT_MSG(texStorage3DProc_, "No supported function for glTexStorage3D\n");
+    IGL_DEBUG_ASSERT(texStorage3DProc_, "No supported function for glTexStorage3D\n");
   }
   GLCALL_PROC(texStorage3DProc_, target, levels, internalformat, width, height, depth);
   APILOG("glTexStorage3D(%s, %u, %s, %u, %u, %u)\n",
@@ -2949,7 +2629,7 @@ void IContext::texImage3D(GLenum target,
         texImage3DProc_ = iglTexImage3D;
       }
     }
-    IGL_ASSERT_MSG(texImage3DProc_, "No supported function for glTexImage3D\n");
+    IGL_DEBUG_ASSERT(texImage3DProc_, "No supported function for glTexImage3D\n");
   }
 
   GLCALL_PROC(texImage3DProc_,
@@ -2977,23 +2657,6 @@ void IContext::texImage3D(GLenum target,
   GLCHECK_ERRORS();
 }
 
-void IContext::texParameterf(GLenum target, GLenum pname, GLfloat param) {
-  GLCALL(TexParameterf)(target, pname, param);
-  APILOG(
-      "glTexParameterf(%s, %s, %f)\n", GL_ENUM_TO_STRING(target), GL_ENUM_TO_STRING(pname), param);
-  GLCHECK_ERRORS();
-}
-
-void IContext::texParameterfv(GLenum target, GLenum pname, const GLfloat* params) {
-  GLCALL(TexParameterfv)(target, pname, params);
-  APILOG("glTexParameterfv(%s, %s, %p [%f])\n",
-         GL_ENUM_TO_STRING(target),
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0.f : *params);
-  GLCHECK_ERRORS();
-}
-
 void IContext::texParameteri(GLenum target, GLenum pname, GLint param) {
   // GLCALL(TexParameteri, target, pname, param);
   GLCALL(TexParameteri)(target, pname, param);
@@ -3001,16 +2664,6 @@ void IContext::texParameteri(GLenum target, GLenum pname, GLint param) {
          GL_ENUM_TO_STRING(target),
          GL_ENUM_TO_STRING(pname),
          GL_ENUM_TO_STRING(param));
-  GLCHECK_ERRORS();
-}
-
-void IContext::texParameteriv(GLenum target, GLenum pname, const GLint* params) {
-  GLCALL(TexParameteriv)(target, pname, params);
-  APILOG("glTexParameteriv(%s, %s, %p [%d])\n",
-         GL_ENUM_TO_STRING(target),
-         GL_ENUM_TO_STRING(pname),
-         params,
-         params == nullptr ? 0 : *params);
   GLCHECK_ERRORS();
 }
 
@@ -3058,7 +2711,7 @@ void IContext::texSubImage3D(GLenum target,
         texSubImage3DProc_ = iglTexSubImage3D;
       }
     }
-    IGL_ASSERT_MSG(texSubImage3DProc_, "No supported function for glTexSubImage3D\n");
+    IGL_DEBUG_ASSERT(texSubImage3DProc_, "No supported function for glTexSubImage3D\n");
   }
 
   GLCALL_PROC(texSubImage3DProc_,
@@ -3308,7 +2961,7 @@ void IContext::unmapBuffer(GLenum target) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::UnmapBuffer)) {
       unmapBufferProc_ = iglUnmapBuffer;
     }
-    IGL_ASSERT_MSG(unmapBufferProc_, "No supported function for glUnmapBuffer\n");
+    IGL_DEBUG_ASSERT(unmapBufferProc_, "No supported function for glUnmapBuffer\n");
   }
   GLCALL_PROC(unmapBufferProc_, target);
   APILOG("glUnmapBuffer(%s)\n", GL_ENUM_TO_STRING(target));
@@ -3327,69 +2980,6 @@ void IContext::validateProgram(GLuint program) {
   GLCHECK_ERRORS();
 }
 
-void IContext::vertexAttrib1f(GLuint indx, GLfloat x) {
-  GLCALL(VertexAttrib1f)(indx, x);
-  APILOG("glVertexAttrib1f(%d, %f)\n", indx, x);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib1fv(GLuint indx, const GLfloat* values) {
-  GLCALL(VertexAttrib1fv)(indx, values);
-  APILOG("glVertexAttrib1fv(%d, %p [%f])\n", indx, values, values == nullptr ? 0.f : *values);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib2f(GLuint indx, GLfloat x, GLfloat y) {
-  GLCALL(VertexAttrib2f)(indx, x, y);
-  APILOG("glVertexAttrib2f(%u, %f, %f)\n", indx, x, y);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib2fv(GLuint indx, const GLfloat* values) {
-  GLCALL(VertexAttrib2fv)(indx, values);
-  APILOG("glVertexAttrib2fv(%u, %p [%f %f])\n",
-         indx,
-         values,
-         values == nullptr ? 0.f : values[0],
-         values == nullptr ? 0.f : values[1]);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib3f(GLuint indx, GLfloat x, GLfloat y, GLfloat z) {
-  GLCALL(VertexAttrib3f)(indx, x, y, z);
-  APILOG("glVertexAttrib3f(%u, %f, %f, %f)\n", indx, x, y, z);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib3fv(GLuint indx, const GLfloat* values) {
-  GLCALL(VertexAttrib3fv)(indx, values);
-  APILOG("glVertexAttrib3fv(%u, %p [%f %f %f])\n",
-         indx,
-         values,
-         values == nullptr ? 0.f : values[0],
-         values == nullptr ? 0.f : values[1],
-         values == nullptr ? 0.f : values[2]);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib4f(GLuint indx, GLfloat x, GLfloat y, GLfloat z, GLfloat w) {
-  GLCALL(VertexAttrib4f)(indx, x, y, z, w);
-  APILOG("glVertexAttrib3f(%u, %f, %f, %f, %f)\n", indx, x, y, z, w);
-  GLCHECK_ERRORS();
-}
-
-void IContext::vertexAttrib4fv(GLuint indx, const GLfloat* values) {
-  GLCALL(VertexAttrib4fv)(indx, values);
-  APILOG("glVertexAttrib4fv(%u, %p [%f %f %f %f])\n",
-         indx,
-         values,
-         values == nullptr ? 0.f : values[0],
-         values == nullptr ? 0.f : values[1],
-         values == nullptr ? 0.f : values[2],
-         values == nullptr ? 0.f : values[3]);
-  GLCHECK_ERRORS();
-}
-
 void IContext::viewport(GLint x, GLint y, GLsizei width, GLsizei height) {
   GLCALL(Viewport)(x, y, width, height);
   APILOG("glViewport(%d, %d, %u, %u)\n", x, y, width, height);
@@ -3403,7 +2993,7 @@ GLuint64 IContext::getTextureHandle(GLuint texture) {
     } else if (deviceFeatureSet_.hasExtension(Extensions::BindlessTextureNv)) {
       getTextureHandleProc_ = iglGetTextureHandleNV;
     }
-    IGL_ASSERT_MSG(getTextureHandleProc_, "No supported function for glGetTextureHandle\n");
+    IGL_DEBUG_ASSERT(getTextureHandleProc_, "No supported function for glGetTextureHandle\n");
   }
 
   GLuint64 ret;
@@ -3420,8 +3010,8 @@ void IContext::makeTextureHandleResident(GLuint64 handle) {
     } else if (deviceFeatureSet_.hasExtension(Extensions::BindlessTextureNv)) {
       makeTextureHandleResidentProc_ = iglMakeTextureHandleResidentNV;
     }
-    IGL_ASSERT_MSG(makeTextureHandleResidentProc_,
-                   "No supported function for glMakeTextureHandleResidentARB\n");
+    IGL_DEBUG_ASSERT(makeTextureHandleResidentProc_,
+                     "No supported function for glMakeTextureHandleResidentARB\n");
   }
 
   GLCALL_PROC(makeTextureHandleResidentProc_, handle);
@@ -3436,8 +3026,8 @@ void IContext::makeTextureHandleNonResident(GLuint64 handle) {
     } else if (deviceFeatureSet_.hasExtension(Extensions::BindlessTextureNv)) {
       makeTextureHandleNonResidentProc_ = iglMakeTextureHandleNonResidentNV;
     }
-    IGL_ASSERT_MSG(makeTextureHandleNonResidentProc_,
-                   "No supported function for glMakeTextureHandleNonResidentARB\n");
+    IGL_DEBUG_ASSERT(makeTextureHandleNonResidentProc_,
+                     "No supported function for glMakeTextureHandleNonResidentARB\n");
   }
 
   GLCALL_PROC(makeTextureHandleNonResidentProc_, handle);
@@ -3460,7 +3050,7 @@ void IContext::memoryBarrier(GLbitfield barriers) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::ShaderImageLoadStore)) {
       memoryBarrierProc_ = iglMemoryBarrier;
     }
-    IGL_ASSERT_MSG(memoryBarrierProc_, "No supported function for glMemoryBarrier\n");
+    IGL_DEBUG_ASSERT(memoryBarrierProc_, "No supported function for glMemoryBarrier\n");
   }
   GLCALL_PROC(memoryBarrierProc_, barriers);
   APILOG("glMemoryBarrier(0x%x)\n", barriers);
@@ -3493,7 +3083,7 @@ void IContext::vertexAttribDivisor(GLuint index, GLuint divisor) {
     } else if (deviceFeatureSet_.hasInternalFeature(InternalFeatures::VertexAttribDivisor)) {
       vertexAttribDivisorProc_ = iglVertexAttribDivisor;
     }
-    IGL_ASSERT_MSG(vertexAttribDivisorProc_, "No supported function for glVertexAttribDivisor\n");
+    IGL_DEBUG_ASSERT(vertexAttribDivisorProc_, "No supported function for glVertexAttribDivisor\n");
   }
 
   GLCALL_PROC(vertexAttribDivisorProc_, index, divisor);
@@ -3525,10 +3115,10 @@ GLenum IContext::checkForErrors(IGL_MAYBE_UNUSED const char* callerName,
       IGL_SCOPE_EXIT {
         gettingMessageLog = false;
       };
-      GLuint count = getDebugMessageLog(
+      const GLuint count = getDebugMessageLog(
           1, messageLength, &source, &type, &id, &severity, &length, messageBuffer.data());
 
-      if (IGL_VERIFY(count == 1)) {
+      if (IGL_DEBUG_VERIFY(count == 1)) {
         logDebugMessage(source, type, id, severity, length, messageBuffer.data());
       }
     }
@@ -3562,7 +3152,7 @@ void IContext::resetCounters() {
 }
 
 bool IContext::addRef() {
-  bool ret = isLikelyValidObject();
+  const bool ret = isLikelyValidObject();
   if (ret) {
     ++refCount_;
   }
@@ -3570,7 +3160,7 @@ bool IContext::addRef() {
 }
 
 bool IContext::releaseRef() {
-  bool ret = isLikelyValidObject();
+  const bool ret = isLikelyValidObject();
   if (ret) {
     --refCount_;
   }
@@ -3602,7 +3192,7 @@ void IContext::initialize(Result* result) {
   } else {
     glVersion = ::igl::opengl::getGLVersion(version);
     if (glVersion == GLVersion::NotAvailable) {
-      IGL_ASSERT_NOT_IMPLEMENTED();
+      IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
       Result::setResult(result, Result::Code::RuntimeError, "Unable to get GL version\n");
     }
   }
@@ -3620,10 +3210,12 @@ void IContext::initialize(Result* result) {
   } else {
     GLint n = 0;
     getIntegerv(GL_NUM_EXTENSIONS, &n);
-    for (GLint i = 0; i < n; i++) {
-      auto ext = reinterpret_cast<const char*>(getStringi(GL_EXTENSIONS, i));
-      if (ext) {
-        supportedExtensions.insert(ext);
+    if (IGL_DEBUG_VERIFY(n >= 0)) {
+      for (GLuint i = 0; i < static_cast<GLuint>(n); i++) {
+        const auto* ext = reinterpret_cast<const char*>(getStringi(GL_EXTENSIONS, i));
+        if (ext) {
+          supportedExtensions.insert(ext);
+        }
       }
     }
   }
@@ -3664,7 +3256,7 @@ void IContext::initialize(Result* result) {
 #endif // IGL_DEBUG || defined(IGL_API_LOG)
 
 #if defined(IGL_WITH_TRACY_GPU)
-  constexpr std::string_view kTracyContextName = "IGL OpenGL";
+  [[maybe_unused]] constexpr std::string_view kTracyContextName = "IGL OpenGL";
   TracyGpuContext;
   TracyGpuContextName(kTracyContextName.data(), kTracyContextName.size());
 #endif
@@ -3695,7 +3287,7 @@ bool IContext::shouldValidateShaders() const {
 }
 
 void IContext::SynchronizedDeletionQueues::flushDeletionQueue(IContext& context) {
-  if (IGL_VERIFY(context.isCurrentContext() || context.isCurrentSharegroup())) {
+  if (IGL_DEBUG_VERIFY(context.isCurrentContext() || context.isCurrentSharegroup())) {
     swapScratchDeletionQueues();
 
     if (!scratchBuffersQueue_.empty()) {
@@ -3745,7 +3337,7 @@ void IContext::SynchronizedDeletionQueues::flushDeletionQueue(IContext& context)
 }
 
 void IContext::SynchronizedDeletionQueues::swapScratchDeletionQueues() {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
 
   std::swap(scratchBuffersQueue_, buffersQueue_);
   std::swap(scratchUnbindBuffersQueue_, unbindBuffersQueue_);
@@ -3758,20 +3350,20 @@ void IContext::SynchronizedDeletionQueues::swapScratchDeletionQueues() {
 }
 
 void IContext::SynchronizedDeletionQueues::queueDeleteBuffers(GLsizei n, const GLuint* buffers) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   for (GLsizei i = 0; i < n; ++i) {
     buffersQueue_.push_back(buffers[i]);
   }
 }
 
 void IContext::SynchronizedDeletionQueues::queueUnbindBuffer(GLenum target) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   unbindBuffersQueue_.insert(target);
 }
 
 void IContext::SynchronizedDeletionQueues::queueDeleteFramebuffers(GLsizei n,
                                                                    const GLuint* framebuffers) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   for (GLsizei i = 0; i < n; ++i) {
     framebuffersQueue_.push_back(framebuffers[i]);
   }
@@ -3779,7 +3371,7 @@ void IContext::SynchronizedDeletionQueues::queueDeleteFramebuffers(GLsizei n,
 
 void IContext::SynchronizedDeletionQueues::queueDeleteRenderbuffers(GLsizei n,
                                                                     const GLuint* renderbuffers) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   for (GLsizei i = 0; i < n; ++i) {
     renderbuffersQueue_.push_back(renderbuffers[i]);
   }
@@ -3787,25 +3379,25 @@ void IContext::SynchronizedDeletionQueues::queueDeleteRenderbuffers(GLsizei n,
 
 void IContext::SynchronizedDeletionQueues::queueDeleteVertexArrays(GLsizei n,
                                                                    const GLuint* vertexArrays) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   for (GLsizei i = 0; i < n; ++i) {
     vertexArraysQueue_.push_back(vertexArrays[i]);
   }
 }
 
 void IContext::SynchronizedDeletionQueues::queueDeleteProgram(GLuint program) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   programQueue_.push_back(program);
 }
 
 void IContext::SynchronizedDeletionQueues::queueDeleteShader(GLuint shaderId) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   shaderQueue_.push_back(shaderId);
 }
 
 void IContext::SynchronizedDeletionQueues::queueDeleteTextures(
     const std::vector<GLuint>& textures) {
-  std::lock_guard<std::mutex> guard(deletionQueueMutex_);
+  const std::lock_guard<std::mutex> guard(deletionQueueMutex_);
   texturesQueue_.insert(std::end(texturesQueue_), std::begin(textures), std::end(textures));
 }
 } // namespace igl::opengl

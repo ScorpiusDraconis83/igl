@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "IntentListener.h"
 #include "KeyListener.h"
 #include "MouseListener.h"
 #include "RayListener.h"
@@ -18,8 +19,7 @@
 #include <variant>
 #include <vector>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 class InputDispatcher {
  public:
@@ -36,13 +36,18 @@ class InputDispatcher {
   void addRayListener(const std::shared_ptr<IRayListener>& listener);
   void removeRayListener(const std::shared_ptr<IRayListener>& listener);
 
+  void addIntentListener(const std::shared_ptr<IIntentListener>& listener);
+  void removeIntentListener(const std::shared_ptr<IIntentListener>& listener);
+
   // Platform methods
   void queueEvent(const MouseButtonEvent& event);
   void queueEvent(const MouseMotionEvent& event);
   void queueEvent(const MouseWheelEvent& event);
   void queueEvent(const TouchEvent& event);
   void queueEvent(const KeyEvent& event);
+  void queueEvent(const CharEvent& event);
   void queueEvent(const RayEvent& event);
+  void queueEvent(const IntentEvent& event);
 
   void processEvents();
 
@@ -56,8 +61,11 @@ class InputDispatcher {
     Touch,
     // Key
     Key,
+    Char,
     // Ray
     Ray,
+    // Intent
+    Intent,
   };
 
   struct Event {
@@ -67,7 +75,9 @@ class InputDispatcher {
                               MouseWheelEvent,
                               TouchEvent,
                               KeyEvent,
-                              RayEvent>;
+                              CharEvent,
+                              RayEvent,
+                              IntentEvent>;
     Data data;
   };
 
@@ -76,8 +86,8 @@ class InputDispatcher {
   std::vector<std::shared_ptr<ITouchListener>> _touchListeners;
   std::vector<std::shared_ptr<IKeyListener>> _keyListeners;
   std::vector<std::shared_ptr<IRayListener>> _rayListeners;
+  std::vector<std::shared_ptr<IIntentListener>> _intentListeners;
   std::queue<Event> _events;
 };
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

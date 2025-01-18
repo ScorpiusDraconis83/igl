@@ -9,39 +9,29 @@
 
 #include <igl/Device.h>
 #include <memory>
-#include <shell/shared/extension/ExtensionLoader.h>
-#include <shell/shared/input/InputDispatcher.h>
-
-namespace igl {
-class IDevice;
-}
 
 namespace igl::shell {
 
 class Extension;
 class FileLoader;
 class ImageLoader;
+struct ImageData;
 class ImageWriter;
-
-class DisplayContext {
- public:
-  float scale = 1.0f; // TODO: Transition call sites to pixelsPerPoint and remove this
-  float pixelsPerPoint = 1.0f; // e.g. retina scale on apple platforms
-};
+class InputDispatcher;
+class DisplayContext;
 
 class Platform {
  public:
+  Platform() noexcept;
   virtual ~Platform();
   virtual igl::IDevice& getDevice() noexcept = 0;
-  virtual std::shared_ptr<igl::IDevice> getDevicePtr() const noexcept = 0;
+  [[nodiscard]] virtual std::shared_ptr<igl::IDevice> getDevicePtr() const noexcept = 0;
   virtual ImageLoader& getImageLoader() noexcept = 0;
   [[nodiscard]] virtual const ImageWriter& getImageWriter() const noexcept = 0;
-  virtual FileLoader& getFileLoader() const noexcept = 0;
-  virtual InputDispatcher& getInputDispatcher() noexcept;
+  [[nodiscard]] virtual FileLoader& getFileLoader() const noexcept = 0;
 
-  virtual DisplayContext& getDisplayContext() noexcept {
-    return displayContext_;
-  }
+  virtual InputDispatcher& getInputDispatcher() noexcept;
+  [[nodiscard]] virtual DisplayContext& getDisplayContext() noexcept;
 
   std::shared_ptr<ITexture> loadTexture(
       const char* filename,
@@ -49,6 +39,12 @@ class Platform {
       igl::TextureFormat format = igl::TextureFormat::RGBA_SRGB,
       igl::TextureDesc::TextureUsageBits usage = igl::TextureDesc::TextureUsageBits::Sampled);
 
+  std::shared_ptr<ITexture> loadTexture(
+      const ImageData& imageData,
+      bool calculateMipmapLevels = true,
+      igl::TextureFormat format = igl::TextureFormat::RGBA_SRGB,
+      igl::TextureDesc::TextureUsageBits usage = igl::TextureDesc::TextureUsageBits::Sampled,
+      const char* debugName = "");
   // 'argc' and 'argv' are the exact arguments received in 'main()'.
   static int argc();
   static char** argv();
@@ -75,9 +71,8 @@ class Platform {
   }
 
  private:
-  ExtensionLoader extensionLoader_;
-  InputDispatcher inputDispatcher_;
-  DisplayContext displayContext_;
+  struct State;
+  std::unique_ptr<State> state_;
 };
 
 } // namespace igl::shell

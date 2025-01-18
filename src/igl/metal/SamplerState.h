@@ -10,8 +10,7 @@
 #include <Metal/Metal.h>
 #include <igl/SamplerState.h>
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 
 class SamplerState final : public ISamplerState {
  public:
@@ -24,9 +23,13 @@ class SamplerState final : public ISamplerState {
   static MTLSamplerMipFilter convertMipFilter(SamplerMipFilter value);
   static MTLSamplerAddressMode convertAddressMode(SamplerAddressMode value);
 
+  /**
+   * @brief Returns true if this sampler is a YUV sampler.
+   */
+  [[nodiscard]] bool isYUV() const noexcept override;
+
  private:
   id<MTLSamplerState> value_;
 };
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

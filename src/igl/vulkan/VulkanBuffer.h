@@ -12,8 +12,7 @@
 #include <igl/vulkan/Common.h>
 #include <igl/vulkan/VulkanHelpers.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 class VulkanContext;
 
@@ -51,13 +50,13 @@ class VulkanBuffer {
    * function is a no-op. This function is synchronous and the data is expected to be available
    * when the function returns.
    */
-  void getBufferSubData(size_t offset, size_t size, void* data);
+  void getBufferSubData(size_t offset, size_t size, void* data) const;
   [[nodiscard]] uint8_t* getMappedPtr() const {
     return static_cast<uint8_t*>(mappedPtr_);
   }
 
   /// @brief Whether the buffer's memory has been mapped.
-  bool isMapped() const {
+  [[nodiscard]] bool isMapped() const {
     return mappedPtr_ != nullptr;
   }
 
@@ -67,18 +66,21 @@ class VulkanBuffer {
   /// @brief Invalidates the mapped memory range to make it visible to the CPU.
   void invalidateMappedMemory(VkDeviceSize offset, VkDeviceSize size) const;
 
-  VkBuffer getVkBuffer() const {
+  [[nodiscard]] VkBuffer getVkBuffer() const {
     return vkBuffer_;
   }
-  VkDeviceAddress getVkDeviceAddress() const {
-    IGL_ASSERT_MSG(vkDeviceAddress_, "Make sure config.enableBufferDeviceAddress is enabled");
+  [[nodiscard]] VkDeviceAddress getVkDeviceAddress() const {
+    IGL_DEBUG_ASSERT(vkDeviceAddress_, "Make sure config.enableBufferDeviceAddress is enabled");
     return vkDeviceAddress_;
   }
-  VkDeviceSize getSize() const {
+  [[nodiscard]] VkDeviceSize getSize() const {
     return bufferSize_;
   }
-  VkMemoryPropertyFlags getMemoryPropertyFlags() const {
+  [[nodiscard]] VkMemoryPropertyFlags getMemoryPropertyFlags() const {
     return memFlags_;
+  }
+  [[nodiscard]] VkBufferUsageFlags getBufferUsageFlags() const {
+    return usageFlags_;
   }
   [[nodiscard]] bool isCoherentMemory() const {
     return isCoherentMemory_;
@@ -89,14 +91,13 @@ class VulkanBuffer {
   VkDevice device_ = VK_NULL_HANDLE;
   VkBuffer vkBuffer_ = VK_NULL_HANDLE;
   VkDeviceMemory vkMemory_ = VK_NULL_HANDLE;
-  VmaAllocationCreateInfo vmaAllocInfo_ = {};
   VmaAllocation vmaAllocation_ = VK_NULL_HANDLE;
   VkDeviceAddress vkDeviceAddress_ = 0;
   VkDeviceSize bufferSize_ = 0;
+  VkBufferUsageFlags usageFlags_ = 0;
   VkMemoryPropertyFlags memFlags_ = 0;
   void* mappedPtr_ = nullptr;
   bool isCoherentMemory_ = false;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

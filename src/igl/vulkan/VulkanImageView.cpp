@@ -10,12 +10,9 @@
 #include <igl/vulkan/Common.h>
 #include <igl/vulkan/VulkanContext.h>
 
-namespace igl {
-
-namespace vulkan {
+namespace igl::vulkan {
 
 VulkanImageView::VulkanImageView(const VulkanContext& ctx,
-                                 VkDevice device,
                                  VkImage image,
                                  VkImageViewType type,
                                  VkFormat format,
@@ -25,31 +22,75 @@ VulkanImageView::VulkanImageView(const VulkanContext& ctx,
                                  uint32_t baseLayer,
                                  uint32_t numLayers,
                                  const char* debugName) :
-  ctx_(ctx), device_(device) {
+  ctx_(&ctx) {
+  IGL_DEBUG_ASSERT(ctx_);
   IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_CREATE);
 
-  VK_ASSERT(ivkCreateImageView(
-      &ctx_.vf_,
-      device_,
+  VkDevice device = ctx_->getVkDevice();
+
+  VkImageViewCreateInfo ci = ivkGetImageViewCreateInfo(
       image,
       type,
       format,
-      VkImageSubresourceRange{aspectMask, baseLevel, numLevels, baseLayer, numLayers},
-      &vkImageView_));
+      VkImageSubresourceRange{aspectMask, baseLevel, numLevels, baseLayer, numLayers});
+
+  VkSamplerYcbcrConversionInfo info{};
+
+  if (igl::vulkan::getNumImagePlanes(format) > 1) {
+    info = ctx.getOrCreateYcbcrConversionInfo(format);
+    ci.pNext = &info;
+  }
+
+  VK_ASSERT(ctx_->vf_.vkCreateImageView(device, &ci, nullptr, &vkImageView_));
 
   VK_ASSERT(ivkSetDebugObjectName(
-      &ctx_.vf_, device_, VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)vkImageView_, debugName));
+      &ctx_->vf_, device, VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)vkImageView_, debugName));
 }
+
+VulkanImageView::VulkanImageView(const VulkanContext& ctx,
+                                 VkDevice /*device*/,
+                                 VkImage image,
+                                 const VulkanImageViewCreateInfo& createInfo,
+                                 const char* debugName) :
+  VulkanImageView(ctx,
+                  image,
+                  createInfo.type,
+                  createInfo.format,
+                  createInfo.aspectMask,
+                  createInfo.baseLevel,
+                  createInfo.numLevels,
+                  createInfo.baseLayer,
+                  createInfo.numLayers,
+                  debugName) {}
 
 VulkanImageView::~VulkanImageView() {
   IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_DESTROY);
-
-  ctx_.deferredTask(
-      std::packaged_task<void()>([vf = &ctx_.vf_, device = device_, imageView = vkImageView_]() {
-        vf->vkDestroyImageView(device, imageView, nullptr);
-      }));
+  destroy();
 }
 
-} // namespace vulkan
+VulkanImageView& VulkanImageView::operator=(VulkanImageView&& other) noexcept {
+  destroy();
+  ctx_ = other.ctx_;
+  vkImageView_ = other.vkImageView_;
+  other.ctx_ = nullptr;
+  other.vkImageView_ = VK_NULL_HANDLE;
+  return *this;
+}
 
-} // namespace igl
+[[nodiscard]] bool VulkanImageView::valid() const {
+  return ctx_ != nullptr;
+}
+
+void VulkanImageView::destroy() {
+  if (valid()) {
+    ctx_->deferredTask(std::packaged_task<void()>(
+        [vf = &ctx_->vf_, device = ctx_->getVkDevice(), imageView = vkImageView_]() {
+          vf->vkDestroyImageView(device, imageView, nullptr);
+        }));
+
+    vkImageView_ = VK_NULL_HANDLE;
+    ctx_ = nullptr;
+  }
+}
+
+} // namespace igl::vulkan

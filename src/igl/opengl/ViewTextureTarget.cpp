@@ -7,8 +7,7 @@
 
 #include <igl/opengl/ViewTextureTarget.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 TextureType ViewTextureTarget::getType() const {
   return TextureType::TwoD;
@@ -19,15 +18,15 @@ TextureDesc::TextureUsage ViewTextureTarget::getUsage() const {
 }
 
 void ViewTextureTarget::bind() {
-  IGL_ASSERT_NOT_REACHED();
+  IGL_DEBUG_ASSERT_NOT_REACHED();
 }
 
 void ViewTextureTarget::bindImage(size_t /*unit*/) {
-  IGL_ASSERT_NOT_REACHED();
+  IGL_DEBUG_ASSERT_NOT_REACHED();
 }
 
 void ViewTextureTarget::unbind() {
-  IGL_ASSERT_NOT_REACHED();
+  IGL_DEBUG_ASSERT_NOT_REACHED();
 }
 
 void ViewTextureTarget::attachAsColor(uint32_t /*index*/, const AttachmentParams& /*params*/) {
@@ -58,5 +57,4 @@ bool ViewTextureTarget::isImplicitStorage() const {
   return true;
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

@@ -25,7 +25,7 @@ class ITrackedResource {
  public:
   virtual ~ITrackedResource() {
     if (resourceTracker_) {
-      resourceTracker_->willDelete(static_cast<T&>(*this));
+      resourceTracker_->willDelete(castThisAsTPtr());
     }
   }
 
@@ -33,17 +33,41 @@ class ITrackedResource {
    * @brief initResourceTracker() sets up tracking with the tracker
    * When the resource is destroyed, it will automatically deregister itself with the tracker
    */
-  void initResourceTracker(std::shared_ptr<IResourceTracker> tracker) {
-    if (IGL_VERIFY(!resourceTracker_)) {
+  void initResourceTracker(std::shared_ptr<IResourceTracker> tracker,
+                           const std::string& name = "") {
+    if (IGL_DEBUG_VERIFY(!resourceTracker_)) {
       resourceTracker_ = std::move(tracker);
+      resourceName_ = name;
       if (resourceTracker_) {
-        resourceTracker_->didCreate(static_cast<T&>(*this));
+        resourceTracker_->didCreate(static_cast<T*>(this));
       }
     }
   }
 
+  [[nodiscard]] virtual const std::string& getResourceName() const {
+    return resourceName_;
+  }
+
  private:
+  // ITrackedResource destructor is called after the `T` object is partially destructed
+  // and ubsan complaints about vptr mismatch on this line :
+  //  return static_cast<T*>(this);
+  // So we prevent UBSan by turning off vptr sanitizer on this function
+  //
+  // @fb-only
+  // @fb-only
+  // @fb-only
+  // @fb-only
+#if defined(__clang__)
+  __attribute__((no_sanitize("vptr")))
+#endif
+  inline T*
+  castThisAsTPtr() {
+    return static_cast<T*>(this);
+  }
+
   std::shared_ptr<IResourceTracker> resourceTracker_;
+  std::string resourceName_;
 };
 
 } // namespace igl

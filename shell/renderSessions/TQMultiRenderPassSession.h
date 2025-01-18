@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <IGLU/simdtypes/SimdTypes.h>
@@ -12,8 +14,7 @@
 #include <shell/shared/platform/Platform.h>
 #include <shell/shared/renderSession/RenderSession.h>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 class TQMultiRenderPassSession : public RenderSession {
  public:
@@ -31,7 +32,7 @@ class TQMultiRenderPassSession : public RenderSession {
   std::shared_ptr<IVertexInputState> vertexInputState_;
   std::shared_ptr<ISamplerState> samplerState_;
 
-  FragmentFormat fragmentParameters_;
+  FragmentFormat fragmentParameters_{};
   std::vector<igl::UniformDesc> fragmentUniformDescriptors_;
 
   std::shared_ptr<IBuffer> fragmentParamBuffer_;
@@ -51,5 +52,4 @@ class TQMultiRenderPassSession : public RenderSession {
   std::shared_ptr<IFramebuffer> framebuffer1_;
 };
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

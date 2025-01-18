@@ -24,8 +24,7 @@
 #include <sstream>
 #include <unordered_set>
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
 
 // https://developer.apple.com/documentation/quartzcore/cametallayer/2938720-maximumdrawablecount?language=objc
 // Max number of Metal drawables in the resource pool managed by Core Animation is 3.
@@ -43,7 +42,7 @@ std::shared_ptr<ICommandQueue> Device::createCommandQueue(const CommandQueueDesc
                                                           Result* outResult) {
   id<MTLCommandQueue> metalObject = [device_ newCommandQueue];
   auto resource =
-      std::make_shared<CommandQueue>(metalObject, bufferSyncManager_, deviceStatistics_);
+      std::make_shared<CommandQueue>(*this, metalObject, bufferSyncManager_, deviceStatistics_);
   Result::setOk(outResult);
   return resource;
 }
@@ -58,9 +57,10 @@ id<MTLBuffer> createMetalBuffer(id<MTLDevice> device,
   } else {
     metalObject = [device newBufferWithLength:desc.length options:options];
   }
+  metalObject.label = [NSString stringWithUTF8String:desc.debugName.c_str()];
   return metalObject;
 }
-}
+} // namespace
 
 std::unique_ptr<IBuffer> Device::createBuffer(const BufferDesc& desc,
                                               Result* outResult) const noexcept {
@@ -70,14 +70,14 @@ std::unique_ptr<IBuffer> Device::createBuffer(const BufferDesc& desc,
   if (desc.hint & BufferDesc::BufferAPIHintBits::NoCopy) {
     return createBufferNoCopy(desc, outResult);
   }
-  MTLStorageMode storage = toMTLStorageMode(desc.storage);
-  MTLResourceOptions options = MTLResourceOptionCPUCacheModeDefault | storage;
+  const MTLStorageMode storage = toMTLStorageMode(desc.storage);
+  const MTLResourceOptions options = MTLResourceOptionCPUCacheModeDefault | storage;
 
   id<MTLBuffer> metalObject = createMetalBuffer(device_, desc, options);
   std::unique_ptr<IBuffer> resource = std::make_unique<Buffer>(
       std::move(metalObject), options, desc.hint, 0 /* No accepted hints */, desc.type);
   if (getResourceTracker()) {
-    resource->initResourceTracker(getResourceTracker());
+    resource->initResourceTracker(getResourceTracker(), desc.debugName);
   }
   Result::setOk(outResult);
   return resource;
@@ -85,8 +85,8 @@ std::unique_ptr<IBuffer> Device::createBuffer(const BufferDesc& desc,
 
 std::unique_ptr<IBuffer> Device::createRingBuffer(const BufferDesc& desc,
                                                   Result* outResult) const noexcept {
-  MTLStorageMode storage = toMTLStorageMode(desc.storage);
-  MTLResourceOptions options = MTLResourceOptionCPUCacheModeDefault | storage;
+  const MTLStorageMode storage = toMTLStorageMode(desc.storage);
+  const MTLResourceOptions options = MTLResourceOptionCPUCacheModeDefault | storage;
 
   // Create a ring of buffers
   std::vector<id<MTLBuffer>> bufferRing;
@@ -98,7 +98,7 @@ std::unique_ptr<IBuffer> Device::createRingBuffer(const BufferDesc& desc,
       std::move(bufferRing), options, bufferSyncManager_, desc.hint, desc.type);
 
   if (getResourceTracker()) {
-    resource->initResourceTracker(getResourceTracker());
+    resource->initResourceTracker(getResourceTracker(), desc.debugName);
   }
   Result::setOk(outResult);
   return resource;
@@ -106,11 +106,11 @@ std::unique_ptr<IBuffer> Device::createRingBuffer(const BufferDesc& desc,
 
 std::unique_ptr<IBuffer> Device::createBufferNoCopy(const BufferDesc& desc,
                                                     Result* outResult) const {
-  MTLStorageMode storage = toMTLStorageMode(desc.storage);
+  const MTLStorageMode storage = toMTLStorageMode(desc.storage);
 
   typedef void (^Deallocator)(void* pointer, NSUInteger length);
-  Deallocator deallocator = nil;
-  MTLResourceOptions options = MTLResourceOptionCPUCacheModeDefault | storage;
+  const Deallocator deallocator = nil;
+  const MTLResourceOptions options = MTLResourceOptionCPUCacheModeDefault | storage;
   id<MTLBuffer> metalObject = [device_ newBufferWithBytesNoCopy:const_cast<void*>(desc.data)
                                                          length:desc.length
                                                         options:options
@@ -119,7 +119,7 @@ std::unique_ptr<IBuffer> Device::createBufferNoCopy(const BufferDesc& desc,
   std::unique_ptr<IBuffer> resource = std::make_unique<Buffer>(
       metalObject, options, desc.hint, BufferDesc::BufferAPIHintBits::NoCopy, desc.type);
   if (getResourceTracker()) {
-    resource->initResourceTracker(getResourceTracker());
+    resource->initResourceTracker(getResourceTracker(), desc.debugName);
   }
   Result::setOk(outResult);
   return resource;
@@ -149,7 +149,7 @@ std::shared_ptr<ITexture> Device::createTexture(const TextureDesc& desc,
         Result::Code::Unsupported,
         "Invalid Texture Format : " +
             std::string(TextureFormatProperties::fromTextureFormat(sanitized.format).name));
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
   metalDesc.width = sanitized.width;
@@ -162,12 +162,12 @@ std::shared_ptr<ITexture> Device::createTexture(const TextureDesc& desc,
   // value must be 1. Support for different sample count values varies by device. Call the
   // supportsTextureSampleCount: method to determine if your desired sample count value is
   // supported.
-  IGL_ASSERT_MSG(sanitized.numSamples > 0, "Texture : Samples cannot be zero");
+  IGL_DEBUG_ASSERT(sanitized.numSamples > 0, "Texture : Samples cannot be zero");
   metalDesc.sampleCount = 1;
   if (metalDesc.textureType == MTLTextureType2DMultisample) {
     metalDesc.mipmapLevelCount = 1;
     if (sanitized.numSamples > 0) {
-      IGL_ASSERT([device_ supportsTextureSampleCount:sanitized.numSamples]);
+      IGL_DEBUG_ASSERT([device_ supportsTextureSampleCount:sanitized.numSamples]);
       metalDesc.sampleCount = sanitized.numSamples;
     }
   }
@@ -188,18 +188,19 @@ std::shared_ptr<ITexture> Device::createTexture(const TextureDesc& desc,
   id<MTLTexture> metalObject = [device_ newTextureWithDescriptor:metalDesc];
   if (!metalObject) {
     Result::setResult(outResult, Result::Code::RuntimeError, "Failed to create Metal texture");
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
+  metalObject.label = [NSString stringWithUTF8String:desc.debugName.c_str()];
   auto iglObject = std::make_shared<Texture>(metalObject, *this);
   if (getResourceTracker()) {
-    iglObject->initResourceTracker(getResourceTracker());
+    iglObject->initResourceTracker(getResourceTracker(), desc.debugName);
   }
   Result::setOk(outResult);
 
   // sanity check to ensure that the Result value and the returned object are in sync
   // i.e. we never have a valid Result with a nullptr return value, or vice versa
-  IGL_ASSERT(outResult == nullptr || (outResult->isOk() == (iglObject != nullptr)));
+  IGL_DEBUG_ASSERT(outResult == nullptr || (outResult->isOk() == (iglObject != nullptr)));
 
   return iglObject;
 }
@@ -212,16 +213,16 @@ std::shared_ptr<igl::IVertexInputState> Device::createVertexInputState(
     Result::setResult(outResult,
                       Result::Code::ArgumentOutOfRange,
                       "numAttributes is too large in VertexInputStateDesc");
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
 
   // Avoid buffer overrun in numInputBindings.
-  if (desc.numInputBindings > IGL_VERTEX_BINDINGS_MAX) {
+  if (desc.numInputBindings > IGL_BUFFER_BINDINGS_MAX) {
     Result::setResult(outResult,
                       Result::Code::ArgumentOutOfRange,
                       "numInputBindings is too large in VertexInputStateDesc");
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
 
@@ -230,17 +231,17 @@ std::shared_ptr<igl::IVertexInputState> Device::createVertexInputState(
   std::unordered_set<int> attributeLocationSet;
   for (int i = 0; i < desc.numAttributes; ++i) {
     size_t bufferIndex = desc.attributes[i].bufferIndex;
-    if (bufferIndex >= IGL_VERTEX_BINDINGS_MAX) {
+    if (bufferIndex >= IGL_BUFFER_BINDINGS_MAX) {
       Result::setResult(outResult, Result::Code::ArgumentOutOfRange, "bufferIndex out of range");
-      IGL_ASSERT_MSG(0, outResult->message.c_str());
+      IGL_DEBUG_ABORT(outResult->message.c_str());
       return nullptr;
     }
 
-    int attribLocation = desc.attributes[i].location;
+    const int attribLocation = desc.attributes[i].location;
     if (attribLocation < 0 || attribLocation >= IGL_VERTEX_ATTRIBUTES_MAX) {
       Result::setResult(
           outResult, Result::Code::ArgumentOutOfRange, "attribute location out of range");
-      IGL_ASSERT_MSG(0, outResult->message.c_str());
+      IGL_DEBUG_ABORT(outResult->message.c_str());
       return nullptr;
     }
 
@@ -254,7 +255,7 @@ std::shared_ptr<igl::IVertexInputState> Device::createVertexInputState(
     msg << "desc.numInputBindings : expected value is " << bufferIndexSet.size()
         << ", but actual value is " << desc.numInputBindings;
     Result::setResult(outResult, Result::Code::ArgumentInvalid, msg.str());
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
 
@@ -266,7 +267,7 @@ std::shared_ptr<igl::IVertexInputState> Device::createVertexInputState(
         << ", but actual value is " << desc.numAttributes;
     Result::setResult(
         outResult, Result::Code::ArgumentInvalid, "attribute locations are not unique");
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
 
@@ -274,14 +275,14 @@ std::shared_ptr<igl::IVertexInputState> Device::createVertexInputState(
   if (metalDesc == nil) {
     Result::setResult(
         outResult, Result::Code::RuntimeError, "failed to create MTLVertexDescriptor");
-    IGL_ASSERT_MSG(0, outResult->message.c_str());
+    IGL_DEBUG_ABORT(outResult->message.c_str());
     return nullptr;
   }
 
   // Validation completed. Populate the metal vertex descriptor.
   for (int i = 0; i < desc.numAttributes; ++i) {
-    size_t bufferIndex = desc.attributes[i].bufferIndex;
-    size_t dstAttribIndex = desc.attributes[i].location;
+    const size_t bufferIndex = desc.attributes[i].bufferIndex;
+    const size_t dstAttribIndex = desc.attributes[i].location;
 
     metalDesc.attributes[dstAttribIndex].format =
         VertexInputState::convertAttributeFormat(desc.attributes[i].format);
@@ -304,7 +305,7 @@ std::shared_ptr<igl::IDepthStencilState> Device::createDepthStencilState(
     const DepthStencilStateDesc& desc,
     Result* outResult) const {
   MTLDepthStencilDescriptor* metalDesc = [MTLDepthStencilDescriptor new];
-
+  metalDesc.label = [NSString stringWithUTF8String:desc.debugName.c_str()];
   metalDesc.depthCompareFunction = DepthStencilState::convertCompareFunction(desc.compareFunction);
   metalDesc.depthWriteEnabled = desc.isDepthWriteEnabled;
   metalDesc.frontFaceStencil = DepthStencilState::convertStencilDescriptor(desc.frontFaceStencil);
@@ -322,15 +323,15 @@ std::shared_ptr<igl::IComputePipelineState> Device::createComputePipeline(
     Result* outResult) const {
   NSError* error = nil;
 
-  if (IGL_UNEXPECTED(desc.shaderStages == nullptr)) {
+  if (IGL_DEBUG_VERIFY_NOT(desc.shaderStages == nullptr)) {
     Result::setResult(outResult, Result::Code::ArgumentInvalid, "Missing shader stages");
     return nullptr;
   }
-  if (!IGL_VERIFY(desc.shaderStages->getType() == ShaderStagesType::Compute)) {
+  if (!IGL_DEBUG_VERIFY(desc.shaderStages->getType() == ShaderStagesType::Compute)) {
     Result::setResult(outResult, Result::Code::ArgumentInvalid, "Shader stages not for compute");
     return nullptr;
   }
-  if (!IGL_VERIFY(desc.shaderStages->getComputeModule())) {
+  if (!IGL_DEBUG_VERIFY(desc.shaderStages->getComputeModule())) {
     Result::setResult(outResult, Result::Code::ArgumentInvalid, "Missing compute shader");
     return nullptr;
   }
@@ -366,6 +367,8 @@ std::shared_ptr<igl::IRenderPipelineState> Device::createRenderPipeline(
   NSError* error = nil;
   MTLRenderPipelineDescriptor* metalDesc = [MTLRenderPipelineDescriptor new];
 
+  metalDesc.label = [NSString stringWithUTF8String:desc.debugName.c_str()];
+
   metalDesc.sampleCount = desc.sampleCount;
 
   // (optional, can be null) Vertex input
@@ -375,28 +378,28 @@ std::shared_ptr<igl::IRenderPipelineState> Device::createRenderPipeline(
 
   metalDesc.vertexDescriptor = metalVertexInput;
 
-  if (!IGL_VERIFY(desc.shaderStages)) {
+  if (!IGL_DEBUG_VERIFY(desc.shaderStages)) {
     Result::setResult(
         outResult, Result::Code::RuntimeError, "RenderPipeline requires shader stages");
     return nullptr;
   }
-  if (!IGL_VERIFY(desc.shaderStages->getType() == ShaderStagesType::Render)) {
+  if (!IGL_DEBUG_VERIFY(desc.shaderStages->getType() == ShaderStagesType::Render)) {
     Result::setResult(outResult, Result::Code::ArgumentInvalid, "Shader stages not for render");
     return nullptr;
   }
 
   // Vertex shader is required
   auto vertexModule = desc.shaderStages->getVertexModule();
-  if (!IGL_VERIFY(vertexModule)) {
+  if (!IGL_DEBUG_VERIFY(vertexModule)) {
     Result::setResult(
         outResult, Result::Code::RuntimeError, "RenderPipeline requires vertex module");
     return nullptr;
   }
 
-  auto vertexFunc = static_cast<ShaderModule*>(vertexModule.get());
+  auto* vertexFunc = static_cast<ShaderModule*>(vertexModule.get());
   metalDesc.vertexFunction = vertexFunc->get();
 
-  if (!IGL_VERIFY(metalDesc.vertexFunction)) {
+  if (!IGL_DEBUG_VERIFY(metalDesc.vertexFunction)) {
     Result::setResult(
         outResult, Result::Code::RuntimeError, "RenderPipeline requires non-null vertex function");
     return nullptr;
@@ -405,13 +408,13 @@ std::shared_ptr<igl::IRenderPipelineState> Device::createRenderPipeline(
   // Fragment shader is optional
   auto fragmentModule = desc.shaderStages->getFragmentModule();
   if (fragmentModule) {
-    auto fragmentFunc = static_cast<ShaderModule*>(fragmentModule.get());
+    auto* fragmentFunc = static_cast<ShaderModule*>(fragmentModule.get());
     metalDesc.fragmentFunction = fragmentFunc->get();
   }
 
   // Framebuffer
   for (uint32_t i = 0; i < desc.targetDesc.colorAttachments.size(); ++i) {
-    auto& src = desc.targetDesc.colorAttachments[i];
+    const auto& src = desc.targetDesc.colorAttachments[i];
     MTLRenderPipelineColorAttachmentDescriptor* dst = metalDesc.colorAttachments[i];
     dst.pixelFormat = Texture::textureFormatToMTLPixelFormat(src.textureFormat);
     dst.writeMask = RenderPipelineState::convertColorWriteMask(src.colorWriteMask);
@@ -450,7 +453,7 @@ std::shared_ptr<igl::IRenderPipelineState> Device::createRenderPipeline(
 
 std::unique_ptr<IShaderLibrary> Device::createShaderLibrary(const ShaderLibraryDesc& desc,
                                                             Result* outResult) const {
-  if (IGL_UNEXPECTED(desc.moduleInfo.empty())) {
+  if (IGL_DEBUG_VERIFY_NOT(desc.moduleInfo.empty())) {
     Result::setResult(outResult, Result::Code::ArgumentInvalid);
     return nullptr;
   }
@@ -484,7 +487,7 @@ std::unique_ptr<IShaderLibrary> Device::createShaderLibrary(const ShaderLibraryD
   }
 
   if (!metalLibrary) {
-    IGL_ASSERT_MSG(!error, "%s\n", [error.localizedDescription UTF8String]);
+    IGL_DEBUG_ASSERT(!error, "%s\n", [error.localizedDescription UTF8String]);
     setResultFrom(outResult, error);
     return nullptr;
   }
@@ -503,17 +506,21 @@ std::unique_ptr<IShaderLibrary> Device::createShaderLibrary(const ShaderLibraryD
 
     auto metalFunction = [metalLibrary newFunctionWithName:shaderEntrypoint];
     if (!metalFunction) {
-      IGL_ASSERT_MSG(0, "Could not find function '%s' in library\n", info.entryPoint.c_str());
+      IGL_DEBUG_ABORT("Could not find function '%s' in library\n", info.entryPoint.c_str());
       Result::setResult(
           outResult, Result::Code::RuntimeError, "Could not find function in library");
       return nullptr;
     }
     modules.emplace_back(std::make_shared<metal::ShaderModule>(info, metalFunction));
+
+    if (auto resourceTracker = getResourceTracker(); resourceTracker && !modules.empty()) {
+      modules.back()->initResourceTracker(resourceTracker, desc.debugName);
+    }
   }
 
   auto shaderLibrary = std::make_unique<ShaderLibrary>(std::move(modules));
   if (auto resourceTracker = getResourceTracker()) {
-    shaderLibrary->initResourceTracker(resourceTracker);
+    shaderLibrary->initResourceTracker(resourceTracker, desc.debugName);
   }
   Result::setOk(outResult);
 
@@ -536,10 +543,10 @@ std::shared_ptr<IShaderModule> Device::createShaderModule(const ShaderModuleDesc
 
 std::unique_ptr<IShaderStages> Device::createShaderStages(const ShaderStagesDesc& desc,
                                                           Result* outResult) const {
-  Result result;
+  const Result result;
   auto stages = std::make_unique<ShaderStages>(desc);
   if (auto resourceTracker = getResourceTracker()) {
-    stages->initResourceTracker(resourceTracker);
+    stages->initResourceTracker(resourceTracker, desc.debugName);
   }
   Result::setResult(outResult, result.code, result.message);
   if (!result.isOk()) {
@@ -574,7 +581,6 @@ ShaderVersion Device::getShaderVersion() const {
   // From https://developer.apple.com/documentation/metal/mtllanguageversion
   ShaderVersion version{.family = ShaderFamily::Metal};
 #if IGL_PLATFORM_IOS
-  std::vector<DeviceFeatureDesc> featureSet;
   if (@available(iOS 15, *)) {
     version.majorVersion = 2;
     version.minorVersion = 4;
@@ -597,7 +603,7 @@ ShaderVersion Device::getShaderVersion() const {
     version.majorVersion = 1;
     version.minorVersion = 1;
   }
-#elif IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#elif IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST
   if (@available(macOS 12.0, *)) {
     version.majorVersion = 2;
     version.minorVersion = 4;
@@ -624,6 +630,25 @@ ShaderVersion Device::getShaderVersion() const {
   return version;
 }
 
+BackendVersion Device::getBackendVersion() const {
+  if (@available(macOS 13.0, iOS 16.0, *)) {
+    return {BackendFlavor::Metal, 3, 0};
+  }
+#if TARGET_OS_OSX
+#if TARGET_CPU_ARM64
+  if (@available(macOS 10.13, iOS 11.0, *)) {
+    return {BackendFlavor::Metal, 2, 0};
+  }
+#else
+  if (@available(macOS 11.0, iOS 11.0, *)) {
+    return {BackendFlavor::Metal, 2, 0};
+  }
+#endif
+#endif
+
+  return {BackendFlavor::Metal, 1, 0};
+}
+
 size_t Device::getCurrentDrawCount() const {
   return deviceStatistics_.getDrawCount();
 }
@@ -634,7 +659,7 @@ MTLStorageMode Device::toMTLStorageMode(ResourceStorage storage) {
     return MTLStorageModePrivate;
   case ResourceStorage::Shared:
     return MTLStorageModeShared;
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST
   case ResourceStorage::Managed:
   default:
     return MTLStorageModeManaged;
@@ -653,7 +678,7 @@ MTLResourceOptions Device::toMTLResourceStorageMode(ResourceStorage storage) {
     return MTLResourceStorageModePrivate;
   case ResourceStorage::Shared:
     return MTLResourceStorageModeShared;
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST
   case ResourceStorage::Managed:
   default:
     return MTLResourceStorageModeManaged;
@@ -665,5 +690,58 @@ MTLResourceOptions Device::toMTLResourceStorageMode(ResourceStorage storage) {
 #endif
   }
 }
-} // namespace metal
-} // namespace igl
+
+Holder<igl::BindGroupTextureHandle> Device::createBindGroup(
+    const BindGroupTextureDesc& desc,
+    const IRenderPipelineState* IGL_NULLABLE /*compatiblePipeline*/,
+    Result* IGL_NULLABLE outResult) {
+  IGL_DEBUG_ASSERT(!desc.debugName.empty(), "Each bind group should have a debug name");
+
+  BindGroupTextureDesc description(desc);
+
+  const auto handle = bindGroupTexturesPool_.create(std::move(description));
+
+  Result::setResult(outResult,
+                    handle.empty() ? Result(Result::Code::RuntimeError, "Cannot create bind group")
+                                   : Result());
+
+  return {this, handle};
+}
+
+Holder<igl::BindGroupBufferHandle> Device::createBindGroup(const BindGroupBufferDesc& desc,
+                                                           Result* IGL_NULLABLE outResult) {
+  IGL_DEBUG_ASSERT(!desc.debugName.empty(), "Each bind group should have a debug name");
+
+  BindGroupBufferDesc description(desc);
+
+  const auto handle = bindGroupBuffersPool_.create(std::move(description));
+
+  Result::setResult(outResult,
+                    handle.empty() ? Result(Result::Code::RuntimeError, "Cannot create bind group")
+                                   : Result());
+
+  return {this, handle};
+}
+
+void Device::destroy(igl::BindGroupTextureHandle handle) {
+  if (handle.empty()) {
+    return;
+  }
+
+  bindGroupTexturesPool_.destroy(handle);
+}
+
+void Device::destroy(igl::BindGroupBufferHandle handle) {
+  if (handle.empty()) {
+    return;
+  }
+
+  bindGroupBuffersPool_.destroy(handle);
+}
+
+void Device::destroy(igl::SamplerHandle handle) {
+  (void)handle;
+  // IGL/Metal is not using sampler handles
+}
+
+} // namespace igl::metal

@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #pragma once
 
 #include <shell/shared/renderSession/RenderSession.h>
@@ -14,12 +16,11 @@
 #include <igl/IGL.h>
 #include <shell/shared/platform/Platform.h>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 struct VertexFormat {
   glm::mat4 mvpMatrix;
-  float scaleZ;
+  float scaleZ{};
 };
 
 class Textured3DCubeSession : public RenderSession {
@@ -37,7 +38,6 @@ class Textured3DCubeSession : public RenderSession {
   std::shared_ptr<IBuffer> vb0_, ib0_; // Buffers for vertices and indices (or constants)
   std::shared_ptr<ITexture> tex0_;
   std::shared_ptr<ISamplerState> samp0_;
-  std::shared_ptr<IFramebuffer> framebuffer_;
 
   VertexFormat vertexParameters_;
 
@@ -46,5 +46,4 @@ class Textured3DCubeSession : public RenderSession {
   void setVertexParams(float aspectRatio);
 };
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

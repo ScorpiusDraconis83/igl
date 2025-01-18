@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 
 project(IGLTests CXX C)
 
@@ -28,8 +28,22 @@ if(IGL_WITH_OPENGL OR IGL_WITH_OPENGLES)
   list(APPEND HEADER_FILES util/device/opengl/TestDevice.h)
 endif()
 
+if(IGL_WITH_METAL)
+  file(GLOB METAL_SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} metal/*.cpp metal/*.mm)
+  list(APPEND SRC_FILES ${METAL_SRC_FILES})
+  list(APPEND SRC_FILES util/device/metal/TestDevice.mm)
+  list(APPEND HEADER_FILES util/device/metal/TestDevice.h)
+endif()
+
 if(IGL_WITH_IGLU)
   file(GLOB IGLU_SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} iglu/*.cpp)
+  file(GLOB IGLU_SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} iglu/texture_loader/*.cpp)
+  if((NOT IGL_WITH_OPENGL) AND (NOT IGL_WITH_OPENGLES))
+    list(REMOVE_ITEM IGLU_SRC_FILES iglu/texture_loader/Ktx1TextureLoaderTest.cpp)
+  endif()
+  if(NOT IGL_WITH_VULKAN)
+    list(REMOVE_ITEM IGLU_SRC_FILES iglu/texture_loader/Ktx2TextureLoaderTest.cpp)
+  endif()
   list(APPEND SRC_FILES ${IGLU_SRC_FILES})
 endif()
 
@@ -38,6 +52,10 @@ enable_testing()
 add_executable(IGLTests ${SRC_FILES} ${HEADER_FILES})
 
 if(WIN32)
+  if(MSVC)
+    target_compile_options(IGLTests PRIVATE /bigobj)
+  endif()
+
   target_compile_definitions(IGLTests PRIVATE -DNOMINMAX)
   target_compile_definitions(IGLTests PRIVATE -DIGL_UNIT_TESTS_GLES_VERSION="3.0")
   target_include_directories(IGLTests PRIVATE "${IGL_ROOT_DIR}/third-party/deps/src/glew/include")
@@ -74,7 +92,10 @@ target_link_libraries(IGLTests PUBLIC IGLLibrary)
 target_link_libraries(IGLTests PUBLIC gtest)
 target_link_libraries(IGLTests PUBLIC gtest_main)
 target_link_libraries(IGLTests PUBLIC IGLUmanagedUniformBuffer)
-target_link_libraries(IGLTests PRIVATE glfw)
+target_link_libraries(IGLTests PUBLIC IGLUshaderCross)
+if(TARGET glfw)
+  target_link_libraries(IGLTests PRIVATE glfw)
+endif()
 
 if(IGL_WITH_IGLU)
   target_link_libraries(IGLTests PUBLIC IGLUimgui)
@@ -89,4 +110,10 @@ if(IGL_WITH_VULKAN)
   target_compile_definitions(IGLTests PUBLIC -DIGL_BACKEND_TYPE="vulkan")
 elseif(IGL_WITH_OPENGL OR IGL_WITH_OPENGLES)
   target_compile_definitions(IGLTests PUBLIC -DIGL_BACKEND_TYPE="ogl")
+endif()
+
+if(UNIX)
+  if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(IGLTests PUBLIC "-Wno-volatile")
+  endif()
 endif()

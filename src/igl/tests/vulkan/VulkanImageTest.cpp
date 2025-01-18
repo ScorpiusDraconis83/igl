@@ -5,7 +5,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <array>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <igl/vulkan/Common.h>
@@ -15,11 +14,13 @@
 #include <igl/vulkan/VulkanImage.h>
 #include <memory>
 
+#include <igl/tests/util/device/TestDevice.h>
+
 #ifdef __ANDROID__
 #include <vulkan/vulkan_android.h>
 #endif
 
-#if IGL_PLATFORM_WIN || IGL_PLATFORM_ANDROID || IGL_PLATFORM_LINUX
+#if IGL_PLATFORM_WINDOWS || IGL_PLATFORM_ANDROID || IGL_PLATFORM_LINUX
 
 namespace igl::tests {
 
@@ -41,7 +42,7 @@ class VulkanImageTest : public ::testing::Test {
     // Turn off debug break so unit tests can run
     igl::setDebugBreakEnabled(false);
 
-    device_ = createDevice();
+    device_ = igl::tests::util::device::createTestDevice(igl::BackendType::Vulkan);
     ASSERT_TRUE(device_ != nullptr);
     auto& device = static_cast<igl::vulkan::Device&>(*device_);
     context_ = &device.getVulkanContext();
@@ -49,44 +50,7 @@ class VulkanImageTest : public ::testing::Test {
   }
 
  protected:
-  std::unique_ptr<igl::IDevice> createDevice() {
-    igl::vulkan::VulkanContextConfig config;
-#if IGL_DEBUG
-    config.enableValidation = true;
-    config.terminateOnValidationError = true;
-#else
-    config.enableValidation = false;
-    config.terminateOnValidationError = false;
-#endif // IGL_DEBUG
-
-#if IGL_PLATFORM_WIN
-    config.enableGPUAssistedValidation = true;
-#else // !IGL_PLATFORM_WIN
-    config.enableGPUAssistedValidation = false;
-#endif // IGL_PLATFORM_WIN
-
-    std::vector<const char*> deviceExtensions;
-#if IGL_PLATFORM_ANDROID
-    deviceExtensions.push_back(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
-    deviceExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
-    deviceExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-#endif // IGL_PLATFORM_ANDROID
-
-    auto ctx = igl::vulkan::HWDevice::createContext(config, nullptr);
-
-    std::vector<igl::HWDeviceDesc> devices = igl::vulkan::HWDevice::queryDevices(
-        *ctx, igl::HWDeviceQueryDesc(igl::HWDeviceType::DiscreteGpu), nullptr);
-
-    if (devices.empty()) {
-      devices = igl::vulkan::HWDevice::queryDevices(
-          *ctx, igl::HWDeviceQueryDesc(igl::HWDeviceType::IntegratedGpu), nullptr);
-    }
-
-    return igl::vulkan::HWDevice::create(
-        std::move(ctx), devices[0], 0, 0, deviceExtensions.size(), deviceExtensions.data());
-  }
-
-  std::unique_ptr<IDevice> device_;
+  std::shared_ptr<IDevice> device_;
   vulkan::VulkanContext* context_ = nullptr;
 };
 
@@ -103,19 +67,20 @@ TEST_F(VulkanImageTest, CreateImageWithExportedMemory) {
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
       0, /* createFlags */
       VK_SAMPLE_COUNT_1_BIT,
+      nullptr,
       "Image: vulkan export memory");
-  ASSERT_NE(vulkanImage, nullptr);
-  EXPECT_TRUE(vulkanImage->isExported_);
-#if IGL_PLATFORM_WIN
-  EXPECT_NE(vulkanImage->exportedMemoryHandle_, nullptr);
-  EXPECT_NE(vulkanImage->getVkImage(), reinterpret_cast<VkImage_T*>(VK_NULL_HANDLE));
+  ASSERT_NE(vulkanImage.valid(), false);
+  EXPECT_TRUE(vulkanImage.isExported_);
+#if IGL_PLATFORM_WINDOWS
+  EXPECT_NE(vulkanImage.exportedMemoryHandle_, nullptr);
+  EXPECT_NE(vulkanImage.getVkImage(), static_cast<VkImage_T*>(VK_NULL_HANDLE));
 #elif IGL_PLATFORM_ANDROID || IGL_PLATFORM_LINUX
-  EXPECT_NE(vulkanImage->exportedFd_, -1);
-  EXPECT_NE(vulkanImage->getVkImage(), VK_NULL_HANDLE);
+  EXPECT_NE(vulkanImage.exportedFd_, -1);
+  EXPECT_NE(vulkanImage.getVkImage(), VK_NULL_HANDLE);
 #endif
 }
 
-#if IGL_PLATFORM_WIN
+#if IGL_PLATFORM_WINDOWS
 TEST_F(VulkanImageTest, CreateImageWithImportedMemoryWin32) {
   auto exportedImage = igl::vulkan::VulkanImage::createWithExportMemory(
       *context_,
@@ -129,13 +94,14 @@ TEST_F(VulkanImageTest, CreateImageWithImportedMemoryWin32) {
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
       0, /* createFlags */
       VK_SAMPLE_COUNT_1_BIT,
+      nullptr,
       "Image: vulkan export memory");
-  ASSERT_NE(exportedImage, nullptr);
-  EXPECT_NE(exportedImage->exportedMemoryHandle_, nullptr);
+  ASSERT_NE(exportedImage.valid(), false);
+  EXPECT_NE(exportedImage.exportedMemoryHandle_, nullptr);
 
   auto importedImage =
       igl::vulkan::VulkanImage(*context_,
-                               exportedImage->exportedMemoryHandle_,
+                               exportedImage.exportedMemoryHandle_,
                                context_->getVkDevice(),
                                VkExtent3D{.width = kWidth, .height = kHeight, .depth = 1},
                                VK_IMAGE_TYPE_2D,
@@ -148,10 +114,10 @@ TEST_F(VulkanImageTest, CreateImageWithImportedMemoryWin32) {
                                VK_SAMPLE_COUNT_1_BIT,
                                "Image: vulkan import memory");
   EXPECT_TRUE(importedImage.isImported_);
-  EXPECT_NE(importedImage.getVkImage(), reinterpret_cast<VkImage_T*>(VK_NULL_HANDLE));
+  EXPECT_NE(importedImage.getVkImage(), static_cast<VkImage_T*>(VK_NULL_HANDLE));
 }
-#endif // IGL_PLATFORM_WIN
+#endif // IGL_PLATFORM_WINDOWS
 
 } // namespace igl::tests
 
-#endif // IGL_PLATFORM_WIN || IGL_PLATFORM_ANDROID || IGL_PLATFORM_LINUX
+#endif // IGL_PLATFORM_WINDOWS || IGL_PLATFORM_ANDROID || IGL_PLATFORM_LINUX

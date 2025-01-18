@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <shell/shared/netservice/apple/NetServiceExtensionApple.h>
 
 #include <shell/shared/netservice/apple/NetServiceApple.h>
@@ -17,7 +19,7 @@
 @implementation IGLShellNetBrowserServiceDelegateAdapter
 
 - (instancetype)initWithOwner:(igl::shell::netservice::NetServiceExtensionApple*)owner {
-  IGL_ASSERT(owner);
+  IGL_DEBUG_ASSERT(owner);
   self = [super init];
   if (self) {
     owner_ = owner;
@@ -29,15 +31,15 @@
 }
 
 - (void)netServiceBrowser:(NSNetServiceBrowser*)browser didNotSearch:(NSDictionary*)errorDict {
-  IGL_ASSERT(owner_);
+  IGL_DEBUG_ASSERT(owner_);
   owner_->stopSearch();
 }
 
 - (void)netServiceBrowser:(NSNetServiceBrowser*)browser
            didFindService:(NSNetService*)netService
                moreComing:(BOOL)moreComing {
-  IGL_ASSERT(owner_);
-  auto& delegate = owner_->delegate();
+  IGL_DEBUG_ASSERT(owner_);
+  const auto& delegate = owner_->delegate();
   bool keepSearching = moreComing;
   if (delegate) {
     auto service = std::make_unique<igl::shell::netservice::NetServiceApple>(netService);
@@ -51,7 +53,7 @@
 - (void)netServiceBrowser:(NSNetServiceBrowser*)browser
          didRemoveService:(NSNetService*)netService
                moreComing:(BOOL)moreComing {
-  IGL_ASSERT(owner_);
+  IGL_DEBUG_ASSERT(owner_);
   auto delegate = owner_->delegate();
   if (delegate) {
     // delegate->didRemoveService(*owner_, service);
@@ -95,7 +97,7 @@ std::unique_ptr<NetService> NetServiceExtensionApple::create(std::string_view do
 
 void NetServiceExtensionApple::search(std::string_view domain,
                                       std::string_view type) const noexcept {
-  if (IGL_VERIFY(!domain.empty())) {
+  if (IGL_DEBUG_VERIFY(!domain.empty())) {
     NSString* serviceType = fromStringView(type);
     NSString* serviceDomain = fromStringView(domain); // @"local."
     [netServiceBrowser_ searchForServicesOfType:serviceType inDomain:serviceDomain];
@@ -103,24 +105,14 @@ void NetServiceExtensionApple::search(std::string_view domain,
 }
 
 void NetServiceExtensionApple::stopSearch() const noexcept {
-  if (IGL_VERIFY(netServiceBrowser_)) {
+  if (IGL_DEBUG_VERIFY(netServiceBrowser_)) {
     [netServiceBrowser_ stop];
   }
 }
 
-IGL_API IGLShellExtension* IGLShellExtension_NewIglShellNetService() {
-  auto extension = new NetServiceExtensionApple;
+IGL_API __attribute((retain, used)) IGLShellExtension* IGLShellExtension_NewIglShellNetService() {
+  auto* extension = new NetServiceExtensionApple;
   return static_cast<IGLShellExtension*>(extension);
 }
 
 } // namespace igl::shell::netservice
-
-// TODO: Find better way to prevent stripping
-@interface IglShellApple_NetServiceExtension : NSObject
-@end
-
-@implementation IglShellApple_NetServiceExtension
-+ (IGLShellExtension_NewCFunction)cFunc {
-  return igl::shell::netservice::IGLShellExtension_NewIglShellNetService;
-}
-@end

@@ -5,24 +5,27 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #include "VertexData.h"
 
 #include <utility>
 
-namespace iglu {
-namespace vertexdata {
+namespace iglu::vertexdata {
 
 VertexData::VertexData(std::shared_ptr<igl::IVertexInputState> vis,
                        std::shared_ptr<igl::IBuffer> vertexBuffer,
                        std::shared_ptr<igl::IBuffer> indexBuffer,
                        igl::IndexFormat indexBufferFormat,
-                       const PrimitiveDesc& primitiveDesc) :
+                       const PrimitiveDesc& primitiveDesc,
+                       igl::PrimitiveType topology) :
   vis_(std::move(vis)),
   vb_(std::move(vertexBuffer)),
   ib_(std::move(indexBuffer)),
   ibFormat_(indexBufferFormat),
   primitiveDesc_(primitiveDesc),
-  usedBytes_(vb_->getSizeInBytes()) {}
+  usedBytes_(vb_->getSizeInBytes()),
+  topology_(topology) {}
 
 VertexData::VertexData(igl::IDevice& device,
                        const std::shared_ptr<igl::IVertexInputState>& vis,
@@ -35,18 +38,19 @@ VertexData::VertexData(igl::IDevice& device,
                                  nullptr),
              nullptr,
              igl::IndexFormat::UInt16,
-             {}) {
-  primitiveDesc_.type = igl::PrimitiveType::Point;
+             {},
+             igl::PrimitiveType::Point) {
   usedBytes_ = 0;
 }
 
 void VertexData::populatePipelineDescriptor(igl::RenderPipelineDesc& pipelineDesc) const {
   pipelineDesc.vertexInputState = vis_;
+  pipelineDesc.topology = topology_;
   pipelineDesc.frontFaceWinding = primitiveDesc_.frontFaceWinding;
 }
 
 bool VertexData::appendData(const void* data, size_t size, size_t numPrimitives) {
-  IGL_ASSERT(vb_);
+  IGL_DEBUG_ASSERT(vb_);
 
   if (!vb_) {
     return false;
@@ -70,14 +74,14 @@ void VertexData::draw(igl::IRenderCommandEncoder& commandEncoder) {
   }
   // Assumption: we don't need buffer offset
   if (vb_) {
-    commandEncoder.bindBuffer(0, igl::BindTarget::kVertex, vb_, 0);
+    commandEncoder.bindVertexBuffer(0, *vb_);
   }
 
   if (ib_) {
-    commandEncoder.drawIndexed(
-        primitiveDesc_.type, primitiveDesc_.numEntries, ibFormat_, *ib_, primitiveDesc_.offset);
+    commandEncoder.bindIndexBuffer(*ib_, ibFormat_, primitiveDesc_.offset);
+    commandEncoder.drawIndexed(primitiveDesc_.numEntries);
   } else {
-    commandEncoder.draw(primitiveDesc_.type, primitiveDesc_.offset, primitiveDesc_.numEntries);
+    commandEncoder.draw(primitiveDesc_.numEntries, 1, primitiveDesc_.offset);
   }
 }
 
@@ -89,5 +93,4 @@ std::shared_ptr<igl::IVertexInputState> VertexData::vertexInputState() {
   return vis_;
 }
 
-} // namespace vertexdata
-} // namespace iglu
+} // namespace iglu::vertexdata

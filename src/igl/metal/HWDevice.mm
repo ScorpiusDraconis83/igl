@@ -13,7 +13,7 @@
 #include <igl/Macros.h>
 #include <igl/metal/Device.h>
 
-#if IGL_PLATFORM_MACOS
+#if IGL_PLATFORM_MACOSX
 #include <igl/metal/macos/Device.h>
 #else
 #include <igl/metal/ios/Device.h>
@@ -25,7 +25,7 @@ namespace igl::metal {
 
 namespace {
 
-#if IGL_PLATFORM_MACOS || IGL_PLATFORM_MACCATALYST
+#if IGL_PLATFORM_MACOSX || IGL_PLATFORM_MACCATALYST
 bool isRemovable(id<MTLDevice> device) {
   if (@available(macOS 10.13, macCatalyst 13.0, *)) {
     return device.removable;
@@ -40,7 +40,7 @@ bool isRemovable(id<MTLDevice> device) {
 HWDeviceType getDeviceType(id<MTLDevice> device);
 
 HWDeviceType getDeviceType(id<MTLDevice> device) {
-  IGL_ASSERT(device != nullptr);
+  IGL_DEBUG_ASSERT(device != nullptr);
 
 #if IGL_PLATFORM_IOS
   return HWDeviceType::DiscreteGpu;
@@ -75,11 +75,11 @@ std::vector<HWDeviceDesc> HWDevice::queryDevices(IGL_MAYBE_UNUSED const HWDevice
     id<MTLDevice> displayDevice =
         CGDirectDisplayCopyCurrentMetalDevice(static_cast<CGDirectDisplayID>(desc.displayId));
     if (displayDevice) {
-      uintptr_t deviceNative = (uintptr_t)(__bridge void*)displayDevice;
-      HWDeviceDesc deviceDesc(deviceNative,
-                              getDeviceType(displayDevice),
-                              0,
-                              std::string([displayDevice.name UTF8String]));
+      const uintptr_t deviceNative = (uintptr_t)(__bridge void*)displayDevice;
+      const HWDeviceDesc deviceDesc(deviceNative,
+                                    getDeviceType(displayDevice),
+                                    0,
+                                    std::string([displayDevice.name UTF8String]));
       devices.push_back(deviceDesc);
     }
     Result::setOk(outResult);
@@ -91,37 +91,37 @@ std::vector<HWDeviceDesc> HWDevice::queryDevices(IGL_MAYBE_UNUSED const HWDevice
   // Loop through all devices and return matching ones
   for (id<MTLDevice> device in deviceList) {
     // We don't need __bridge_retained here as iOS always provides the same ptr
-    uintptr_t deviceNative = (uintptr_t)(__bridge void*)device;
+    const uintptr_t deviceNative = (uintptr_t)(__bridge void*)device;
 
     // If we requested an unknown device type, then return
     // all the available devices
-    uint32_t vendorId = 0;
+    const uint32_t vendorId = 0;
     if (desc.hardwareType == HWDeviceType::Unknown) {
-      HWDeviceDesc deviceDesc(
+      const HWDeviceDesc deviceDesc(
           deviceNative, desc.hardwareType, vendorId, std::string([device.name UTF8String]));
       devices.push_back(deviceDesc);
     } else if (device.lowPower) {
       if (desc.hardwareType == HWDeviceType::IntegratedGpu) {
-        HWDeviceDesc deviceDesc(deviceNative,
-                                HWDeviceType::IntegratedGpu,
-                                vendorId,
-                                std::string([device.name UTF8String]));
+        const HWDeviceDesc deviceDesc(deviceNative,
+                                      HWDeviceType::IntegratedGpu,
+                                      vendorId,
+                                      std::string([device.name UTF8String]));
         devices.push_back(deviceDesc);
       }
     } else if (isRemovable(device)) {
       if (desc.hardwareType == HWDeviceType::ExternalGpu) {
-        HWDeviceDesc deviceDesc(deviceNative,
-                                HWDeviceType::ExternalGpu,
-                                vendorId,
-                                std::string([device.name UTF8String]));
+        const HWDeviceDesc deviceDesc(deviceNative,
+                                      HWDeviceType::ExternalGpu,
+                                      vendorId,
+                                      std::string([device.name UTF8String]));
         devices.push_back(deviceDesc);
       }
     } else { // Device is NOT Integrated NOR External
       if (desc.hardwareType == HWDeviceType::DiscreteGpu) {
-        HWDeviceDesc deviceDesc(deviceNative,
-                                HWDeviceType::DiscreteGpu,
-                                vendorId,
-                                std::string([device.name UTF8String]));
+        const HWDeviceDesc deviceDesc(deviceNative,
+                                      HWDeviceType::DiscreteGpu,
+                                      vendorId,
+                                      std::string([device.name UTF8String]));
         devices.push_back(deviceDesc);
       }
     }
@@ -133,7 +133,7 @@ std::vector<HWDeviceDesc> HWDevice::queryDevices(IGL_MAYBE_UNUSED const HWDevice
 }
 
 std::unique_ptr<IDevice> HWDevice::create(const HWDeviceDesc& desc, Result* outResult) {
-  IGL_ASSERT_MSG(desc.guid != 0L, "Invalid hardwareGuid(%lu)", desc.guid);
+  IGL_DEBUG_ASSERT(desc.guid != 0L, "Invalid hardwareGuid(%lu)", desc.guid);
   if (desc.guid == 0L) {
     Result::setResult(outResult, Result::Code::Unsupported, "Metal is not supported!");
     return nullptr;
@@ -153,7 +153,7 @@ std::unique_ptr<metal::Device> HWDevice::createWithMTLDevice(id<MTLDevice> devic
     return nullptr;
   }
 
-#if IGL_PLATFORM_MACOS
+#if IGL_PLATFORM_MACOSX
   auto iglDevice = std::make_unique<macos::Device>(device);
 #else
   auto iglDevice = std::make_unique<ios::Device>(device);

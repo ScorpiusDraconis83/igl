@@ -26,12 +26,13 @@ std::shared_ptr<igl::ITexture> createCheckerboardTexture(igl::IDevice& device) {
   };
 
   igl::Result result;
-  igl::TextureDesc desc = igl::TextureDesc::new2D(igl::TextureFormat::RGBA_UNorm8,
-                                                  kWidth,
-                                                  kHeight,
-                                                  igl::TextureDesc::TextureUsageBits::Sampled);
+  const igl::TextureDesc desc =
+      igl::TextureDesc::new2D(igl::TextureFormat::RGBA_UNorm8,
+                              kWidth,
+                              kHeight,
+                              igl::TextureDesc::TextureUsageBits::Sampled);
   auto texture = device.createTexture(desc, &result);
-  IGL_ASSERT_MSG(result.isOk(), "Create texture failed: %s\n", result.message.c_str());
+  IGL_DEBUG_ASSERT(result.isOk(), "Create texture failed: %s\n", result.message.c_str());
 
   const auto range = igl::TextureRangeDesc::new2D(0, 0, kWidth, kHeight);
   texture->upload(range, kData);
@@ -103,10 +104,10 @@ const char kGLSLShaderSourceFragment[] =
 std::unique_ptr<igl::IShaderStages> getShaderStagesForBackend(igl::IDevice& device) {
   switch (device.getBackendType()) {
   case igl::BackendType::Invalid:
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
     return nullptr;
   case igl::BackendType::Vulkan:
-    IGL_ASSERT_MSG(0, "IGLSamples not set up for Vulkan");
+    IGL_DEBUG_ABORT("IGLSamples not set up for Vulkan");
     return nullptr;
   // @fb-only
     // @fb-only
@@ -115,7 +116,7 @@ std::unique_ptr<igl::IShaderStages> getShaderStagesForBackend(igl::IDevice& devi
     igl::Result result;
     auto stages = igl::ShaderStagesCreator::fromLibraryStringInput(
         device, kMSLShaderSource, "vertexShader", "fragmentShader", "", &result);
-    IGL_ASSERT_MSG(result.isOk(), "Shader stage creation failed: %s\n", result.message.c_str());
+    IGL_DEBUG_ASSERT(result.isOk(), "Shader stage creation failed: %s\n", result.message.c_str());
     return stages;
   }
   case igl::BackendType::OpenGL: {
@@ -128,7 +129,7 @@ std::unique_ptr<igl::IShaderStages> getShaderStagesForBackend(igl::IDevice& devi
                                                                   "main",
                                                                   "",
                                                                   &result);
-    IGL_ASSERT_MSG(result.isOk(), "Shader stage creation failed: %s\n", result.message.c_str());
+    IGL_DEBUG_ASSERT(result.isOk(), "Shader stage creation failed: %s\n", result.message.c_str());
     return stages;
   }
   }
@@ -141,8 +142,7 @@ const size_t kTextureUnit = 0;
 
 // ----------------------------------------------------------------------------
 
-namespace iglu {
-namespace kit {
+namespace iglu::kit {
 
 const nlohmann::json& TinyRenderable::getProperties() const {
   static const nlohmann::json j;
@@ -158,12 +158,12 @@ const nlohmann::json& TinyRenderable::getProperties() const {
 }
 
 void TinyRenderable::initialize(igl::IDevice& device, const igl::IFramebuffer& framebuffer) {
-  IGL_ASSERT(device.verifyScope());
+  IGL_DEBUG_ASSERT(device.verifyScope());
 
   igl::Result result;
 
   shaderStages_ = getShaderStagesForBackend(device);
-  IGL_ASSERT(shaderStages_ != nullptr);
+  IGL_DEBUG_ASSERT(shaderStages_ != nullptr);
 
   // Vertex buffer
   struct VertexPosUv {
@@ -179,17 +179,17 @@ void TinyRenderable::initialize(igl::IDevice& device, const igl::IFramebuffer& f
       {{0.9f, -0.9f, 0.0}, {kMax, 0.0}},
   };
 
-  igl::BufferDesc vbDesc =
+  const igl::BufferDesc vbDesc =
       igl::BufferDesc(igl::BufferDesc::BufferTypeBits::Vertex, kVertexData, sizeof(kVertexData));
   vertexBuffer_ = device.createBuffer(vbDesc, &result);
-  IGL_ASSERT_MSG(result.isOk(), "create buffer failed: %s\n", result.message.c_str());
+  IGL_DEBUG_ASSERT(result.isOk(), "create buffer failed: %s\n", result.message.c_str());
 
   // Index buffer
   const uint16_t kIndexData[] = {0, 1, 2, 1, 3, 2};
   auto ibDesc =
       igl::BufferDesc(igl::BufferDesc::BufferTypeBits::Index, kIndexData, sizeof(kIndexData));
   indexBuffer_ = device.createBuffer(ibDesc, &result);
-  IGL_ASSERT_MSG(result.isOk(), "create buffer failed: %s\n", result.message.c_str());
+  IGL_DEBUG_ASSERT(result.isOk(), "create buffer failed: %s\n", result.message.c_str());
 
   // Vertex input state
   igl::VertexInputStateDesc inputDesc;
@@ -201,7 +201,7 @@ void TinyRenderable::initialize(igl::IDevice& device, const igl::IFramebuffer& f
   inputDesc.numInputBindings = 1;
   inputDesc.inputBindings[0].stride = sizeof(VertexPosUv);
   vertexInput_ = device.createVertexInputState(inputDesc, &result);
-  IGL_ASSERT_MSG(result.isOk(), "create vertex state failed: %s\n", result.message.c_str());
+  IGL_DEBUG_ASSERT(result.isOk(), "create vertex state failed: %s\n", result.message.c_str());
 
   // Sampler & Texture
   igl::SamplerStateDesc samplerDesc;
@@ -209,14 +209,14 @@ void TinyRenderable::initialize(igl::IDevice& device, const igl::IFramebuffer& f
   samplerDesc.addressModeV = igl::SamplerAddressMode::Repeat;
   samplerDesc.minFilter = samplerDesc.magFilter = igl::SamplerMinMagFilter::Nearest;
   samplerDesc.magFilter = samplerDesc.magFilter = igl::SamplerMinMagFilter::Nearest;
-  sampler_ = device.createSamplerState(samplerDesc, NULL);
+  sampler_ = device.createSamplerState(samplerDesc, nullptr);
   texture_ = createCheckerboardTexture(device);
 
   igl::RenderPipelineDesc graphicsDesc;
   graphicsDesc.vertexInputState = vertexInput_;
   graphicsDesc.shaderStages = shaderStages_;
   auto indices = framebuffer.getColorAttachmentIndices();
-  IGL_ASSERT(!indices.empty());
+  IGL_DEBUG_ASSERT(!indices.empty());
   graphicsDesc.targetDesc.colorAttachments.resize(1);
   auto textureFormat = framebuffer.getColorAttachment(indices[0])->getProperties().format;
   graphicsDesc.targetDesc.colorAttachments[0].textureFormat = textureFormat;
@@ -235,7 +235,7 @@ void TinyRenderable::initialize(igl::IDevice& device, const igl::IFramebuffer& f
   graphicsDesc.frontFaceWinding = igl::WindingMode::Clockwise;
 
   pipelineState_ = device.createRenderPipeline(graphicsDesc, &result);
-  IGL_ASSERT_MSG(result.isOk(), "create pipeline failed: %s\n", result.message.c_str());
+  IGL_DEBUG_ASSERT(result.isOk(), "create pipeline failed: %s\n", result.message.c_str());
 }
 
 void TinyRenderable::update(igl::IDevice& device) {
@@ -245,14 +245,13 @@ void TinyRenderable::update(igl::IDevice& device) {
 void TinyRenderable::submit(igl::IRenderCommandEncoder& cmds) {
   // Draw call 0
   // clang-format off
-  cmds.bindBuffer(0, igl::BindTarget::kVertex, vertexBuffer_, 0);
-//  cmds.bindBuffer(1, igl::BindTarget::kFragment, uniformBuffer_, 0);
+  cmds.bindVertexBuffer(0, *vertexBuffer_);
   cmds.bindRenderPipelineState(pipelineState_);
   cmds.bindTexture(kTextureUnit, igl::BindTarget::kFragment, texture_.get());
   cmds.bindSamplerState(kTextureUnit, igl::BindTarget::kFragment, sampler_.get());
-  cmds.drawIndexed(igl::PrimitiveType::Triangle, 6, igl::IndexFormat::UInt16, *indexBuffer_, 0);
+  cmds.bindIndexBuffer(*indexBuffer_, igl::IndexFormat::UInt16);
+  cmds.drawIndexed(6);
   // clang-format on
 }
 
-} // namespace kit
-} // namespace iglu
+} // namespace iglu::kit

@@ -16,7 +16,6 @@
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
 #include <igl/NameHandle.h>
-#include <igl/opengl/Device.h>
 #include <string>
 
 namespace igl::tests {
@@ -143,7 +142,7 @@ class TextureTest : public ::testing::Test {
     ASSERT_TRUE(uv_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
@@ -367,7 +366,7 @@ TEST(TextureFormatProperties, getSubRangeByteOffset) {
       EXPECT_EQ(props.getSubRangeByteOffset(range, range.atMipLevel(1).atLayer(1)), 900);
 
       // Custom row length
-      EXPECT_EQ(props.getSubRangeByteOffset(range, range.atLayer(1), 50), 500);
+      EXPECT_EQ(props.getSubRangeByteOffset(range, range.withNumMipLevels(1).atLayer(1), 50), 500);
     }
 
     {
@@ -395,7 +394,7 @@ TEST(TextureFormatProperties, getSubRangeByteOffset) {
       EXPECT_EQ(props.getSubRangeByteOffset(range, range.atMipLevel(1).atFace(1)), 2500);
 
       // Custom row length
-      EXPECT_EQ(props.getSubRangeByteOffset(range, range.atFace(1), 50), 500);
+      EXPECT_EQ(props.getSubRangeByteOffset(range, range.withNumMipLevels(1).atFace(1), 50), 500);
     }
   }
   {

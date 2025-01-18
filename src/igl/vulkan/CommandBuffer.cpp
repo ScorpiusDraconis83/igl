@@ -13,16 +13,16 @@
 #include <igl/vulkan/Framebuffer.h>
 #include <igl/vulkan/RenderCommandEncoder.h>
 #include <igl/vulkan/Texture.h>
+#include <igl/vulkan/VulkanBuffer.h>
 #include <igl/vulkan/VulkanContext.h>
 #include <igl/vulkan/VulkanImage.h>
 #include <igl/vulkan/VulkanTexture.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 CommandBuffer::CommandBuffer(VulkanContext& ctx, CommandBufferDesc desc) :
   ctx_(ctx), wrapper_(ctx_.immediate_->acquire()), desc_(std::move(desc)) {
-  IGL_ASSERT(wrapper_.cmdBuf_ != VK_NULL_HANDLE);
+  IGL_DEBUG_ASSERT(wrapper_.cmdBuf_ != VK_NULL_HANDLE);
 }
 
 std::unique_ptr<IComputeCommandEncoder> CommandBuffer::createComputeCommandEncoder() {
@@ -31,23 +31,16 @@ std::unique_ptr<IComputeCommandEncoder> CommandBuffer::createComputeCommandEncod
 
 std::unique_ptr<IRenderCommandEncoder> CommandBuffer::createRenderCommandEncoder(
     const RenderPassDesc& renderPass,
-    std::shared_ptr<IFramebuffer> framebuffer,
+    const std::shared_ptr<IFramebuffer>& framebuffer,
     const Dependencies& dependencies,
     Result* outResult) {
   IGL_PROFILER_FUNCTION();
-  IGL_ASSERT(framebuffer);
+  IGL_DEBUG_ASSERT(framebuffer);
 
   framebuffer_ = framebuffer;
 
-  for (ITexture* IGL_NULLABLE tex : dependencies.textures) {
-    if (tex) {
-      transitionToShaderReadOnly(wrapper_.cmdBuf_, tex);
-    }
-  }
-
   // prepare all the color attachments
-  const auto& indices = framebuffer->getColorAttachmentIndices();
-  for (auto i : indices) {
+  for (const auto i : framebuffer->getColorAttachmentIndices()) {
     ITexture* colorTex = framebuffer->getColorAttachment(i).get();
     transitionToColorAttachment(wrapper_.cmdBuf_, colorTex);
     // handle MSAA
@@ -59,41 +52,42 @@ std::unique_ptr<IRenderCommandEncoder> CommandBuffer::createRenderCommandEncoder
   const auto depthTex = framebuffer->getDepthAttachment();
   if (depthTex) {
     const auto& vkDepthTex = static_cast<Texture&>(*depthTex);
-    const auto& depthImg = vkDepthTex.getVulkanTexture().getVulkanImage();
-    IGL_ASSERT_MSG(depthImg.imageFormat_ != VK_FORMAT_UNDEFINED, "Invalid depth attachment format");
-    const VkImageAspectFlags flags =
-        vkDepthTex.getVulkanTexture().getVulkanImage().getImageAspectFlags();
+    const igl::vulkan::VulkanImage& depthImg = vkDepthTex.getVulkanTexture().image_;
+    IGL_DEBUG_ASSERT(depthImg.imageFormat_ != VK_FORMAT_UNDEFINED,
+                     "Invalid depth attachment format");
+    const VkImageAspectFlags flags = vkDepthTex.getVulkanTexture().image_.getImageAspectFlags();
     depthImg.transitionLayout(
         wrapper_.cmdBuf_,
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         VkImageSubresourceRange{flags, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS});
   }
 
   auto encoder = RenderCommandEncoder::create(
       shared_from_this(), ctx_, renderPass, framebuffer, dependencies, outResult);
 
-  if (ctx_.enhancedShaderDebuggingStore_) {
-    encoder->binder().bindStorageBuffer(
+  if (encoder && ctx_.enhancedShaderDebuggingStore_) {
+    encoder->binder().bindBuffer(
         EnhancedShaderDebuggingStore::kBufferIndex,
         static_cast<igl::vulkan::Buffer*>(ctx_.enhancedShaderDebuggingStore_->vertexBuffer().get()),
+        0,
         0);
   }
 
   return encoder;
 }
 
-void CommandBuffer::present(std::shared_ptr<ITexture> surface) const {
+void CommandBuffer::present(const std::shared_ptr<ITexture>& surface) const {
   IGL_PROFILER_FUNCTION();
 
-  IGL_ASSERT(surface);
+  IGL_DEBUG_ASSERT(surface);
 
   presentedSurface_ = surface;
 
   const auto& vkTex = static_cast<Texture&>(*surface);
   const VulkanTexture& tex = vkTex.getVulkanTexture();
-  const VulkanImage& img = tex.getVulkanImage();
+  const VulkanImage& img = tex.image_;
 
   // prepare image for presentation
   if (vkTex.isSwapchainTexture()) {
@@ -116,8 +110,7 @@ void CommandBuffer::present(std::shared_ptr<ITexture> surface) const {
 
   // transition only non-multisampled images - MSAA images cannot be accessed from shaders
   if (img.samples_ == VK_SAMPLE_COUNT_1_BIT) {
-    const VkImageAspectFlags flags =
-        vkTex.getVulkanTexture().getVulkanImage().getImageAspectFlags();
+    const VkImageAspectFlags flags = vkTex.getVulkanTexture().image_.getImageAspectFlags();
     const VkPipelineStageFlags srcStage = vkTex.getProperties().isDepthOrStencil()
                                               ? VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
                                               : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -133,7 +126,7 @@ void CommandBuffer::present(std::shared_ptr<ITexture> surface) const {
 }
 
 void CommandBuffer::pushDebugGroupLabel(const char* label, const igl::Color& color) const {
-  IGL_ASSERT(label != nullptr && *label);
+  IGL_DEBUG_ASSERT(label != nullptr && *label);
   ivkCmdBeginDebugUtilsLabel(&ctx_.vf_, wrapper_.cmdBuf_, label, color.toFloatPtr());
 }
 
@@ -144,20 +137,19 @@ void CommandBuffer::popDebugGroupLabel() const {
 void CommandBuffer::waitUntilCompleted() {
   IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_WAIT);
 
-  ctx_.immediate_->wait(lastSubmitHandle_);
+  ctx_.immediate_->wait(lastSubmitHandle_, ctx_.config_.fenceTimeoutNanoseconds);
 
   lastSubmitHandle_ = VulkanImmediateCommands::SubmitHandle();
 }
 
 void CommandBuffer::waitUntilScheduled() {}
 
-std::shared_ptr<igl::IFramebuffer> CommandBuffer::getFramebuffer() const {
+const std::shared_ptr<igl::IFramebuffer>& CommandBuffer::getFramebuffer() const {
   return framebuffer_;
 }
 
-std::shared_ptr<ITexture> CommandBuffer::getPresentedSurface() const {
+const std::shared_ptr<ITexture>& CommandBuffer::getPresentedSurface() const {
   return presentedSurface_;
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

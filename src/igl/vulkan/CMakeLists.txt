@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # CMake 3.16 can load Vulkan SDK
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 
 project(IGLVulkan CXX C)
 
@@ -18,41 +18,30 @@ if(APPLE)
   list(APPEND HEADER_FILES ${APPLE_HEADER_FILES})
 endif()
 
+if(ANDROID)
+  file(GLOB ANDROID_SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} android/*.cpp)
+  file(GLOB ANDROID_HEADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} android/*.h)
+  list(APPEND SRC_FILES ${ANDROID_SRC_FILES})
+  list(APPEND HEADER_FILES ${ANDROID_HEADER_FILES})
+endif()
+
 add_library(IGLVulkan ${SRC_FILES} ${HEADER_FILES})
 
-target_link_libraries(IGLVulkan PRIVATE IGLLibrary)
+target_link_libraries(IGLVulkan PRIVATE IGLLibrary IGLGlslang)
 
-igl_set_cxxstd(IGLVulkan 17)
+igl_set_cxxstd(IGLVulkan 20)
 igl_set_folder(IGLVulkan "IGL")
-
-# glslang
-# cmake-format: off
-set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "")
-set(ENABLE_HLSL             OFF CACHE BOOL "")
-set(ENABLE_CTEST            OFF CACHE BOOL "")
-set(ENABLE_OPT              OFF CACHE BOOL "")
-set(ENABLE_SPVREMAPPER      OFF CACHE BOOL "")
-set(SKIP_GLSLANG_INSTALL    ON  CACHE BOOL "")
-add_subdirectory(${IGL_ROOT_DIR}/third-party/deps/src/glslang "glslang")
-igl_set_folder(GenericCodeGen     "third-party/glslang")
-igl_set_folder(glslang            "third-party/glslang")
-igl_set_folder(MachineIndependent "third-party/glslang")
-igl_set_folder(OGLCompiler        "third-party/glslang")
-igl_set_folder(OSDependent        "third-party/glslang")
-igl_set_folder(SPIRV              "third-party/glslang")
-igl_set_folder(glslang-default-resource-limits "third-party/glslang")
-# cmake-format: on
-
-target_link_libraries(IGLVulkan PUBLIC glslang SPIRV glslang-default-resource-limits)
 
 find_package(Vulkan REQUIRED)
 
 target_link_libraries(IGLVulkan PUBLIC Vulkan::Vulkan)
 target_link_libraries(IGLVulkan PUBLIC fmt)
 
+target_include_directories(IGLVulkan PUBLIC "${IGL_ROOT_DIR}/third-party/deps/src/fmt/include")
 target_include_directories(IGLVulkan PUBLIC "${IGL_ROOT_DIR}/third-party/deps/src/volk")
 target_include_directories(IGLVulkan PUBLIC "${IGL_ROOT_DIR}/third-party/deps/src/vma/include")
 target_include_directories(IGLVulkan PUBLIC "${IGL_ROOT_DIR}/third-party/deps/src/SPIRV-Headers/include")
+target_include_directories(IGLVulkan PUBLIC "${IGL_ROOT_DIR}/third-party/deps/src/glslang")
 
 if(WIN32)
   add_definitions("-DVK_USE_PLATFORM_WIN32_KHR=1")

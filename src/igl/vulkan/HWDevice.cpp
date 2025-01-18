@@ -9,23 +9,22 @@
 
 #include <igl/vulkan/Device.h>
 #include <igl/vulkan/VulkanContext.h>
-#include <igl/vulkan/VulkanDevice.h>
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 
 std::unique_ptr<VulkanContext> HWDevice::createContext(const VulkanContextConfig& config,
-                                                       void* window,
+                                                       void* IGL_NULLABLE window,
                                                        size_t numExtraInstanceExtensions,
-                                                       const char** extraInstanceExtensions,
-                                                       void* display) {
+                                                       const char* IGL_NULLABLE* IGL_NULLABLE
+                                                           extraInstanceExtensions,
+                                                       void* IGL_NULLABLE display) {
   return std::make_unique<VulkanContext>(
       config, window, numExtraInstanceExtensions, extraInstanceExtensions, display);
 }
 
 std::vector<HWDeviceDesc> HWDevice::queryDevices(VulkanContext& ctx,
                                                  const HWDeviceQueryDesc& desc,
-                                                 Result* outResult) {
+                                                 Result* IGL_NULLABLE outResult) {
   std::vector<HWDeviceDesc> outDevices;
 
   Result::setResult(outResult, ctx.queryDevices(desc, outDevices));
@@ -38,11 +37,15 @@ std::unique_ptr<IDevice> HWDevice::create(std::unique_ptr<VulkanContext> ctx,
                                           uint32_t width,
                                           uint32_t height,
                                           size_t numExtraDeviceExtensions,
-                                          const char** extraDeviceExtensions,
-                                          Result* outResult) {
-  IGL_ASSERT(ctx);
+                                          const char* IGL_NULLABLE* IGL_NULLABLE
+                                              extraDeviceExtensions,
+                                          const igl::vulkan::VulkanFeatures* IGL_NULLABLE features,
+                                          const char* IGL_NULLABLE debugName,
+                                          Result* IGL_NULLABLE outResult) {
+  IGL_DEBUG_ASSERT(ctx);
 
-  auto result = ctx->initContext(desc, numExtraDeviceExtensions, extraDeviceExtensions);
+  auto result =
+      ctx->initContext(desc, numExtraDeviceExtensions, extraDeviceExtensions, features, debugName);
 
   Result::setResult(outResult, result);
 
@@ -59,5 +62,4 @@ std::unique_ptr<IDevice> HWDevice::create(std::unique_ptr<VulkanContext> ctx,
   return result.isOk() ? std::make_unique<igl::vulkan::Device>(std::move(ctx)) : nullptr;
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

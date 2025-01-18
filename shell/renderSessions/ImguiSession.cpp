@@ -5,16 +5,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #include <shell/renderSessions/ImguiSession.h>
 
 #include <igl/CommandBuffer.h>
 #include <igl/RenderPass.h>
+#include <shell/shared/platform/DisplayContext.h>
+#include <shell/shared/renderSession/ShellParams.h>
 
-namespace igl {
-namespace shell {
+namespace igl::shell {
 
 void ImguiSession::initialize() noexcept {
-  const igl::CommandQueueDesc desc{igl::CommandQueueType::Graphics};
+  const igl::CommandQueueDesc desc{};
   _commandQueue = getPlatform().getDevice().createCommandQueue(desc, nullptr);
 
   { // Create the ImGui session
@@ -24,7 +27,7 @@ void ImguiSession::initialize() noexcept {
 }
 
 void ImguiSession::update(igl::SurfaceTextures surfaceTextures) noexcept {
-  igl::DeviceScope deviceScope(getPlatform().getDevice());
+  const igl::DeviceScope deviceScope(getPlatform().getDevice());
 
   auto cmdBuffer = _commandQueue->createCommandBuffer(igl::CommandBufferDesc(), nullptr);
 
@@ -40,7 +43,7 @@ void ImguiSession::update(igl::SurfaceTextures surfaceTextures) noexcept {
   renderPassDesc.colorAttachments.resize(1);
   renderPassDesc.colorAttachments[0].loadAction = igl::LoadAction::Clear;
   renderPassDesc.colorAttachments[0].storeAction = igl::StoreAction::Store;
-  renderPassDesc.colorAttachments[0].clearColor = getPlatform().getDevice().backendDebugColor();
+  renderPassDesc.colorAttachments[0].clearColor = getPreferredClearColor();
   auto encoder = cmdBuffer->createRenderCommandEncoder(renderPassDesc, _outputFramebuffer);
 
   { // Draw using ImGui every frame
@@ -50,10 +53,11 @@ void ImguiSession::update(igl::SurfaceTextures surfaceTextures) noexcept {
   }
 
   encoder->endEncoding();
-  cmdBuffer->present(surfaceTextures.color);
+  if (shellParams().shouldPresent) {
+    cmdBuffer->present(surfaceTextures.color);
+  }
 
   _commandQueue->submit(*cmdBuffer);
 }
 
-} // namespace shell
-} // namespace igl
+} // namespace igl::shell

@@ -12,13 +12,9 @@
 #include <vector>
 
 #include <igl/vulkan/Common.h>
-#include <igl/vulkan/VulkanFunctions.h>
 #include <igl/vulkan/VulkanHelpers.h>
 
-namespace igl {
-namespace vulkan {
-
-struct VulkanContextConfig;
+namespace igl::vulkan {
 
 /// @brief The VulkanExtensions class is a helper class that manages instance and device
 /// extensions in Vulkan by enumerating all extensions available for either object and storing the
@@ -30,7 +26,7 @@ struct VulkanContextConfig;
 /// type, checking whether an extension is available without modifying the internal storage of the
 /// object, checking if an extension has been enabled for an object and, finally, a method to return
 /// a list of all enabled extensions of a type as `const char *`, which is accepted by the
-/// VUlkan API
+/// Vulkan API
 class VulkanExtensions final {
  public:
   /// @brief Helper enumeration to determine which extension is being used. It's converted to a
@@ -53,7 +49,8 @@ class VulkanExtensions final {
 
   /// @brief Returns all available extensions of a type
   /// @param extensionType The type of the extensions
-  const std::vector<std::string>& allAvailableExtensions(ExtensionType extensionType) const;
+  [[nodiscard]] const std::vector<std::string>& allAvailableExtensions(
+      ExtensionType extensionType) const;
 
   /// @brief Returns true if the extension with name equal to `extensionName` of the type
   /// `extensionType` is available and false otherwise
@@ -67,13 +64,14 @@ class VulkanExtensions final {
   /// @param extensionType The type of the extensions
   /// @param validationEnabled Flag that informs the class whether the Validation Layer is
   /// enabled or not.
-  void enableCommonExtensions(ExtensionType extensionType, const VulkanContextConfig& config);
+  void enableCommonInstanceExtensions(const VulkanContextConfig& config);
+  void enableCommonDeviceExtensions(const VulkanContextConfig& config);
 
   /// @brief Enables the extension with name `extensionName` of the type `extensionType` if the
   /// extension is available. If an instance or physical device deoesn't support the
   /// extension, this method is a no-op
   /// @param extensionName The name of the extension
-  /// @param extensionType The type of the extensions
+  /// @param extensionType The type of the extension
   /// @return True if the extension is available, false otherwise
   bool enable(const char* extensionName, ExtensionType extensionType);
 
@@ -91,7 +89,10 @@ class VulkanExtensions final {
   /// @return A vector of `const char *` with all enabled extensions of type `extensionType`. The
   /// return value must not outlive the instance of this class, as the pointers in the returned
   /// vector point to the strings stored internally in this class
-  std::vector<const char*> allEnabled(ExtensionType extensionType) const;
+  [[nodiscard]] std::vector<const char*> allEnabled(ExtensionType extensionType) const;
+
+ public:
+  bool has8BitIndices = false;
 
  private:
   static constexpr size_t kNumberOfExtensionTypes = 2;
@@ -106,5 +107,4 @@ class VulkanExtensions final {
   std::vector<std::unordered_set<std::string>> enabledExtensions_;
 };
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

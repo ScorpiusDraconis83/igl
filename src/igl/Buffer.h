@@ -19,16 +19,9 @@ namespace igl {
 class ICommandBuffer;
 
 enum class IndexFormat : uint8_t {
+  UInt8,
   UInt16,
   UInt32,
-};
-
-enum class PrimitiveType : uint8_t {
-  Point,
-  Line,
-  LineStrip,
-  Triangle,
-  TriangleStrip,
 };
 
 struct BufferRange {
@@ -48,6 +41,7 @@ struct BufferDesc {
     Uniform = 1 << 2,
     Storage = 1 << 3,
     Indirect = 1 << 4,
+    // @fb-only
   };
 
   using BufferType = uint8_t;
@@ -92,10 +86,15 @@ struct BufferDesc {
              size_t length = 0,
              ResourceStorage storageIn = ResourceStorage::Invalid,
              BufferAPIHint hint = 0,
-             const std::string& debugName = std::string()) :
-    data(data), length(length), storage(storageIn), hint(hint), type(type), debugName(debugName) {
+             std::string debugName = std::string()) :
+    data(data),
+    length(length),
+    storage(storageIn),
+    hint(hint),
+    type(type),
+    debugName(std::move(debugName)) {
     if (storage == ResourceStorage::Invalid) {
-#if IGL_PLATFORM_MACOS
+#if IGL_PLATFORM_MACOSX
       storage = ResourceStorage::Managed;
 #else
       storage = ResourceStorage::Shared;
@@ -107,7 +106,7 @@ struct BufferDesc {
 
 class IBuffer : public ITrackedResource<IBuffer> {
  public:
-  virtual ~IBuffer() = default;
+  ~IBuffer() override = default;
 
   /**
    * @brief Upload data into a range in IBuffer.
@@ -143,24 +142,24 @@ class IBuffer : public ITrackedResource<IBuffer> {
    * @remark It is NOT guaranteed that all of these hints were accepted and used. Use
    * acceptedApiHints to get those.
    */
-  virtual BufferDesc::BufferAPIHint requestedApiHints() const noexcept = 0;
+  [[nodiscard]] virtual BufferDesc::BufferAPIHint requestedApiHints() const noexcept = 0;
 
   /**
    * @brief Returns the API hints that were accepted and used in the buffer's creation.
    */
-  virtual BufferDesc::BufferAPIHint acceptedApiHints() const noexcept = 0;
+  [[nodiscard]] virtual BufferDesc::BufferAPIHint acceptedApiHints() const noexcept = 0;
 
   /**
    * @brief Returns the storage mode for the buffer.
    */
-  virtual ResourceStorage storage() const noexcept = 0;
+  [[nodiscard]] virtual ResourceStorage storage() const noexcept = 0;
 
   /**
    * @brief Returns current size of IBuffer
    *
    * @return Current allocated size
    */
-  virtual size_t getSizeInBytes() const = 0;
+  [[nodiscard]] virtual size_t getSizeInBytes() const = 0;
 
   /**
    * @brief Returns a buffer id suitable for bindless rendering (buffer_device_address on Vulkan and
@@ -168,14 +167,14 @@ class IBuffer : public ITrackedResource<IBuffer> {
    *
    * @return uint64_t
    */
-  virtual uint64_t gpuAddress(size_t offset = 0) const = 0;
+  [[nodiscard]] virtual uint64_t gpuAddress(size_t offset = 0) const = 0;
 
   /**
    * @brief Returns the underlying buffer type which is a mask of igl::BufferDesc::BufferTypeBits
    *
    * @return igl::BufferDesc::BufferType
    */
-  virtual BufferDesc::BufferType getBufferType() const = 0;
+  [[nodiscard]] virtual BufferDesc::BufferType getBufferType() const = 0;
 
  protected:
   IBuffer() = default;

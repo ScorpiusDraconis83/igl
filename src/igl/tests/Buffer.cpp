@@ -7,12 +7,10 @@
 
 #include "util/Common.h"
 #include "util/TestDevice.h"
-#include <igl/opengl/Device.h>
 
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 //
 // BufferTest
@@ -119,7 +117,7 @@ TEST_F(BufferTest, createWithDebugLabel) {
                                      ResourceStorage::Shared);
   bufferDesc.debugName = "test";
 
-  std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
+  const std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
 
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(buffer != nullptr);
@@ -139,9 +137,9 @@ TEST_F(BufferTest, mapIndexBuffer) {
       3,
       2,
   };
-  BufferDesc bufferDesc = BufferDesc(
+  const BufferDesc bufferDesc = BufferDesc(
       BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData), ResourceStorage::Shared);
-  std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
+  const std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
 
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(buffer != nullptr);
@@ -175,18 +173,18 @@ TEST_F(BufferTest, mapBufferRangeIndexBuffer) {
       3,
       2,
   };
-  BufferDesc bufferDesc = BufferDesc(
+  const BufferDesc bufferDesc = BufferDesc(
       BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData), ResourceStorage::Shared);
-  std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
+  const std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
 
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(buffer != nullptr);
 
   std::vector<uint16_t> bufferPartialData(3);
-  int numElementsToSkip = 2;
-  int offsetBytes = numElementsToSkip * sizeof(uint16_t);
-  int numElementsToMap = 3;
-  int sizeBytes = numElementsToMap * sizeof(uint16_t);
+  const int numElementsToSkip = 2;
+  const int offsetBytes = numElementsToSkip * sizeof(uint16_t);
+  const int numElementsToMap = 3;
+  const int sizeBytes = numElementsToMap * sizeof(uint16_t);
   auto newRange = BufferRange(sizeBytes, offsetBytes);
   auto* data = buffer->map(newRange, &ret);
 
@@ -201,6 +199,7 @@ TEST_F(BufferTest, mapBufferRangeIndexBuffer) {
   for (int i = 0; i < numElementsToMap; ++i) {
     ASSERT_EQ(bufferPartialData[i], indexData[i + numElementsToSkip]);
   }
+  buffer->unmap();
 }
 
 TEST_F(BufferTest, copyBytesErrorsIndexBuffer) {
@@ -214,9 +213,9 @@ TEST_F(BufferTest, copyBytesErrorsIndexBuffer) {
       3,
       2,
   };
-  BufferDesc bufferDesc = BufferDesc(
+  const BufferDesc bufferDesc = BufferDesc(
       BufferDesc::BufferTypeBits::Index, indexData, sizeof(indexData), ResourceStorage::Shared);
-  std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
+  const std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
 
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(buffer != nullptr);
@@ -244,7 +243,7 @@ TEST_F(BufferTest, mapUniformBuffer) {
   bufferDesc.data = &color;
   bufferDesc.length = sizeof(color);
 
-  std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
+  const std::shared_ptr<IBuffer> buffer = iglDev_->createBuffer(bufferDesc, &ret);
 
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(buffer != nullptr);
@@ -262,5 +261,4 @@ TEST_F(BufferTest, mapUniformBuffer) {
   ASSERT_EQ(color.a, bufferData[3]);
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

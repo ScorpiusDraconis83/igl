@@ -14,12 +14,12 @@ namespace igl::shell {
 
 class PlatformWin : public Platform {
  public:
-  PlatformWin(std::shared_ptr<igl::IDevice> device);
+  explicit PlatformWin(std::shared_ptr<igl::IDevice> device);
   igl::IDevice& getDevice() noexcept override;
-  std::shared_ptr<igl::IDevice> getDevicePtr() const noexcept override;
+  [[nodiscard]] std::shared_ptr<igl::IDevice> getDevicePtr() const noexcept override;
   ImageLoader& getImageLoader() noexcept override;
-  const ImageWriter& getImageWriter() const noexcept override;
-  FileLoader& getFileLoader() const noexcept override;
+  [[nodiscard]] const ImageWriter& getImageWriter() const noexcept override;
+  [[nodiscard]] FileLoader& getFileLoader() const noexcept override;
 
  private:
   std::shared_ptr<igl::IDevice> device_;

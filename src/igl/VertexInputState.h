@@ -140,7 +140,7 @@ struct VertexInputStateDesc {
   size_t numAttributes = 0;
   VertexAttribute attributes[IGL_VERTEX_ATTRIBUTES_MAX];
   size_t numInputBindings = 0;
-  VertexInputBinding inputBindings[IGL_VERTEX_BUFFER_MAX];
+  VertexInputBinding inputBindings[IGL_BUFFER_BINDINGS_MAX];
   static size_t sizeForVertexAttributeFormat(VertexAttributeFormat format);
 
   bool operator==(const VertexInputStateDesc& other) const;
@@ -164,17 +164,17 @@ class IVertexInputState {
 namespace std {
 template<>
 struct hash<igl::VertexInputStateDesc> {
-  size_t operator()(igl::VertexInputStateDesc const& /*key*/) const;
+  size_t operator()(const igl::VertexInputStateDesc& /*key*/) const;
 };
 
 template<>
 struct hash<igl::VertexInputBinding> {
-  size_t operator()(igl::VertexInputBinding const& /*key*/) const;
+  size_t operator()(const igl::VertexInputBinding& /*key*/) const;
 };
 
 template<>
 struct hash<igl::VertexAttribute> {
-  size_t operator()(igl::VertexAttribute const& /*key*/) const;
+  size_t operator()(const igl::VertexAttribute& /*key*/) const;
 };
 
 } // namespace std

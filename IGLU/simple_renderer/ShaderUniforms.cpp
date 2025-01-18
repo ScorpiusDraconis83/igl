@@ -9,7 +9,6 @@
 
 #include <igl/Buffer.h>
 #include <igl/Device.h>
-#include <igl/Log.h>
 #include <igl/Uniform.h>
 #if IGL_BACKEND_OPENGL
 #include <igl/opengl/RenderCommandEncoder.h>
@@ -39,7 +38,7 @@ uint8_t bindTargetForShaderStage(igl::ShaderStage stage) {
   case igl::ShaderStage::Fragment:
     return igl::BindTarget::kFragment;
   default:
-    IGL_ASSERT_MSG(0, "invalid shader stage for rendering: %d", (int)stage);
+    IGL_DEBUG_ABORT("invalid shader stage for rendering: %d", (int)stage);
     return 0;
   }
 }
@@ -49,7 +48,8 @@ uint8_t bindTargetForShaderStage(igl::ShaderStage stage) {
 namespace iglu::material {
 
 ShaderUniforms::ShaderUniforms(igl::IDevice& device,
-                               const igl::IRenderPipelineReflection& reflection) :
+                               const igl::IRenderPipelineReflection& reflection,
+                               bool enableSuballocationforVulkan) :
   device_(device) {
   bool hasBindBytesFeature = device.hasFeature(igl::DeviceFeatures::BindBytes);
   size_t bindBytesLimit = 0;
@@ -61,13 +61,14 @@ ShaderUniforms::ShaderUniforms(igl::IDevice& device,
   size_t uniformBufferLimit = 0;
   device.getFeatureLimits(igl::DeviceFeatureLimits::MaxUniformBufferBytes, uniformBufferLimit);
 
-  const bool isSuballocated = device_.getBackendType() == igl::BackendType::Vulkan;
+  const bool isSuballocated = enableSuballocationforVulkan &&
+                              device_.getBackendType() == igl::BackendType::Vulkan;
   for (const igl::BufferArgDesc& iglDesc : reflection.allUniformBuffers()) {
-    size_t length = iglDesc.bufferDataSize;
-    IGL_ASSERT_MSG(length > 0, "unexpected buffer with size 0");
-    IGL_ASSERT_MSG(length <= MAX_SUBALLOCATED_BUFFER_SIZE_BYTES &&
-                       (uniformBufferLimit == 0 || length <= uniformBufferLimit),
-                   "buffer size exceeds limits");
+    const size_t length = iglDesc.bufferDataSize;
+    IGL_DEBUG_ASSERT(length > 0, "unexpected buffer with size 0");
+    IGL_DEBUG_ASSERT(length <= MAX_SUBALLOCATED_BUFFER_SIZE_BYTES &&
+                         (uniformBufferLimit == 0 || length <= uniformBufferLimit),
+                     "buffer size exceeds limits");
     const size_t bufferAllocationLength =
         std::min(isSuballocated ? MAX_SUBALLOCATED_BUFFER_SIZE_BYTES : length,
                  uniformBufferLimit != 0 ? uniformBufferLimit : std::numeric_limits<size_t>::max());
@@ -120,12 +121,18 @@ ShaderUniforms::ShaderUniforms(igl::IDevice& device,
 
     if (isSuballocated) {
       bufferDesc->isSuballocated = true;
-      bufferDesc->suballocationsSize = length;
+      // In Vulkan, Uniform buffers must have offets that are a multiple of
+      // VkPhysicalDeviceLimits::minUniformBufferOffsetAlignment
+      size_t alignement = 0;
+      device.getFeatureLimits(igl::DeviceFeatureLimits::BufferAlignment, alignement);
+
+      // Align the suballocation size to the physical device alignment
+      bufferDesc->suballocationsSize = (length + alignement - 1) & ~(alignement - 1);
     }
 
     for (int i = 0; i < static_cast<int>(iglDesc.members.size()); ++i) {
-      auto& uniformDesc = iglDesc.members[i];
-      UniformDesc uniform{uniformDesc, bufferDesc};
+      const auto& uniformDesc = iglDesc.members[i];
+      const UniformDesc uniform{uniformDesc, bufferDesc};
       _allUniformsByName.insert({uniformDesc.name, uniform});
       bufferDesc->uniforms.push_back(uniform);
       bufferDesc->memberIndices[uniformDesc.name] = i;
@@ -135,9 +142,6 @@ ShaderUniforms::ShaderUniforms(igl::IDevice& device,
   }
 
   for (const igl::TextureArgDesc& iglDesc : reflection.allTextures()) {
-    IGL_ASSERT_MSG(_allTexturesByName.find(iglDesc.name) == _allTexturesByName.end(),
-                   "Texture names must be unique across all shader stages: %s",
-                   iglDesc.name.c_str());
     _textureDescs.push_back(iglDesc);
     _allTexturesByName[iglDesc.name] = TextureSlot{nullptr, nullptr};
   }
@@ -149,15 +153,32 @@ ShaderUniforms::~ShaderUniforms() {
   }
 }
 
+igl::NameHandle ShaderUniforms::MemoizedQualifiedMemberNameCalculator::getQualifiedMemberName(
+    const igl::NameHandle& /*blockTypeName*/,
+    const igl::NameHandle& blockInstanceName,
+    const igl::NameHandle& memberName) const {
+  const std::pair<igl::NameHandle, igl::NameHandle> key = {blockInstanceName, memberName};
+  auto it = qualifiedMemberNameCache_.find(key);
+  if (it != qualifiedMemberNameCache_.end()) {
+    return it->second;
+  }
+  auto qualifiedMemberName =
+      igl::genNameHandle(blockInstanceName.toString() + "." + memberName.toString());
+  qualifiedMemberNameCache_.insert({key, qualifiedMemberName});
+  return qualifiedMemberName;
+}
+
 igl::NameHandle ShaderUniforms::getQualifiedMemberName(const igl::NameHandle& blockTypeName,
                                                        const igl::NameHandle& blockInstanceName,
                                                        const igl::NameHandle& memberName) {
-  return igl::genNameHandle(blockInstanceName.toString() + "." + memberName.toString());
+  return memoizedQualifiedMemberNameCalculator_.getQualifiedMemberName(
+      blockTypeName, blockInstanceName, memberName);
 }
 
-igl::NameHandle ShaderUniforms::getBufferName(const igl::NameHandle& blockTypeName,
-                                              const igl::NameHandle& blockInstanceName,
-                                              const igl::NameHandle& memberName) {
+std::vector<std::pair<igl::NameHandle, igl::NameHandle>>
+ShaderUniforms::getPossibleBufferAndMemberNames(const igl::NameHandle& blockTypeName,
+                                                const igl::NameHandle& blockInstanceName,
+                                                const igl::NameHandle& memberName) {
   /**
     Given an SparkSL/GLSL3 interface block:
     ```
@@ -184,34 +205,23 @@ igl::NameHandle ShaderUniforms::getBufferName(const igl::NameHandle& blockTypeNa
       }
     ```
 
-    In OpenGL3, the name of the buffer block is `BlockTypeName`.
+    In OpenGL3, the name of the buffer block is `BlockTypeName` and the member name is 'memberName'.
 
-    In legacy OpenGL, we treat each member of the struct an individual uniform, so the name is
-    `blockInstanceName.f`
+    In legacy OpenGL, we treat each member of the struct an individual uniform, so both the buffer
+    name and member name are `blockInstanceName.f`
 
-    In Metal, the name of the block is `blockInstanceName`
+    In Metal, the name of the block is `blockInstanceName` and the member name is 'memberName'.
   */
   if (device_.getBackendType() == igl::BackendType::Metal) {
-    return blockInstanceName;
+    return {{blockInstanceName, memberName}};
   } else {
     if (device_.getBackendType() == igl::BackendType::OpenGL) {
-      if (device_.getShaderVersion().majorVersion < 3) {
-        return getQualifiedMemberName(blockTypeName, blockInstanceName, memberName);
-      }
+      auto qualifiedName =
+          ShaderUniforms::getQualifiedMemberName(blockTypeName, blockInstanceName, memberName);
+      return {{blockTypeName, memberName}, {qualifiedName, qualifiedName}};
     }
-    return blockTypeName;
+    return {{blockTypeName, memberName}};
   }
-}
-
-igl::NameHandle ShaderUniforms::getBufferMemberName(const igl::NameHandle& blockTypeName,
-                                                    const igl::NameHandle& blockInstanceName,
-                                                    const igl::NameHandle& memberName) {
-  if (device_.getBackendType() == igl::BackendType::OpenGL) {
-    if (device_.getShaderVersion().majorVersion < 3) {
-      return getQualifiedMemberName(blockTypeName, blockInstanceName, memberName);
-    }
-  }
-  return memberName;
 }
 
 void ShaderUniforms::setUniformBytes(const UniformDesc& uniformDesc,
@@ -221,7 +231,7 @@ void ShaderUniforms::setUniformBytes(const UniformDesc& uniformDesc,
                                      size_t arrayIndex) {
   if (arrayIndex + count > uniformDesc.iglMemberDesc.arrayLength) {
     IGL_LOG_ERROR_ONCE("[IGL][Error] Invalid range for uniform %s:  %zu,%zu,%zu\n",
-                       uniformDesc.iglMemberDesc.name.toConstChar(),
+                       uniformDesc.iglMemberDesc.name.c_str(),
                        arrayIndex,
                        count,
                        uniformDesc.iglMemberDesc.arrayLength);
@@ -230,7 +240,7 @@ void ShaderUniforms::setUniformBytes(const UniformDesc& uniformDesc,
   auto strongBuffer = uniformDesc.buffer.lock();
   if (!strongBuffer) {
     IGL_LOG_ERROR_ONCE("[IGL][Error] null uniform buffer %s!\n",
-                       uniformDesc.iglMemberDesc.name.toConstChar());
+                       uniformDesc.iglMemberDesc.name.c_str());
     return;
   }
 
@@ -238,7 +248,7 @@ void ShaderUniforms::setUniformBytes(const UniformDesc& uniformDesc,
   if (strongBuffer->isSuballocated && strongBuffer->currentAllocation >= 0) {
     subAllocatedOffset = strongBuffer->currentAllocation * strongBuffer->suballocationsSize;
   }
-  uintptr_t offset =
+  const uintptr_t offset =
       uniformDesc.iglMemberDesc.offset + elementSize * arrayIndex + subAllocatedOffset;
 
   auto err = try_checked_memcpy((uint8_t*)strongBuffer->allocation->ptr + offset, // destination
@@ -258,23 +268,29 @@ void ShaderUniforms::setUniformBytes(const igl::NameHandle& blockTypeName,
                                      size_t elementSize,
                                      size_t count,
                                      size_t arrayIndex) {
-  auto bufferName = getBufferName(blockTypeName, blockInstanceName, memberName);
-  auto range = _bufferDescs.equal_range(bufferName);
-  IGL_ASSERT_MSG(range.first != range.second, "Buffer not found: %s", bufferName.toConstChar());
+  auto possibleBufferNames =
+      getPossibleBufferAndMemberNames(blockTypeName, blockInstanceName, memberName);
 
-  for (auto bufferDescIt = range.first; bufferDescIt != range.second; ++bufferDescIt) {
-    auto& bufferDesc = bufferDescIt->second;
-    auto bufferMemberName = getBufferMemberName(blockTypeName, blockInstanceName, memberName);
-    auto memberIndexIt = bufferDesc->memberIndices.find(bufferMemberName);
-    if (memberIndexIt == bufferDesc->memberIndices.end()) {
-      IGL_LOG_ERROR_ONCE("Member %s not found in buffer %s",
-                         bufferMemberName.toConstChar(),
-                         bufferName.toConstChar());
+  for (auto& [bufferName, bufferMemberName] : possibleBufferNames) {
+    auto range = _bufferDescs.equal_range(bufferName);
+    if (range.first == range.second) {
       continue;
     }
-    auto& uniformDesc = bufferDesc->uniforms[memberIndexIt->second];
-    setUniformBytes(uniformDesc, data, elementSize, count, arrayIndex);
+
+    for (auto bufferDescIt = range.first; bufferDescIt != range.second; ++bufferDescIt) {
+      auto& bufferDesc = bufferDescIt->second;
+      auto memberIndexIt = bufferDesc->memberIndices.find(bufferMemberName);
+      if (memberIndexIt == bufferDesc->memberIndices.end()) {
+        IGL_LOG_ERROR_ONCE(
+            "Member %s not found in buffer %s", bufferMemberName.c_str(), bufferName.c_str());
+        continue;
+      }
+      auto& uniformDesc = bufferDesc->uniforms[memberIndexIt->second];
+      setUniformBytes(uniformDesc, data, elementSize, count, arrayIndex);
+    }
+    return;
   }
+  IGL_LOG_ERROR_ONCE("Buffer block not found: %s", blockTypeName.c_str());
 }
 
 void ShaderUniforms::setUniformBytes(const igl::NameHandle& name,
@@ -284,7 +300,7 @@ void ShaderUniforms::setUniformBytes(const igl::NameHandle& name,
                                      size_t arrayIndex) {
   auto range = _allUniformsByName.equal_range(name);
   if (range.first == range.second) {
-    IGL_LOG_ERROR_ONCE("[IGL][Error] Invalid uniform name: %s\n", name.toConstChar());
+    IGL_LOG_ERROR_ONCE("[IGL][Error] Invalid uniform name: %s\n", name.c_str());
     return;
   }
   for (auto it = range.first; it != range.second; ++it) {
@@ -355,7 +371,7 @@ void ShaderUniforms::setFloatArray(const igl::NameHandle& uniformName,
 void ShaderUniforms::setFloatArray(const igl::NameHandle& blockTypeName,
                                    const igl::NameHandle& blockInstanceName,
                                    const igl::NameHandle& memberName,
-                                   iglu::simdtypes::float1* value,
+                                   const iglu::simdtypes::float1* value,
                                    size_t count,
                                    size_t arrayIndex) {
   setUniformBytes(blockTypeName,
@@ -426,7 +442,7 @@ void ShaderUniforms::setFloat3Array(const igl::NameHandle& uniformName,
     // This code path should not be used for Vulkan. (it should only be used for OpenGL when uniform
     // blocks are not used).
     const size_t size = sizeof(float) * 3u * count;
-    IGL_ASSERT(size <= 65536);
+    IGL_DEBUG_ASSERT(size <= 65536);
     float* IGL_RESTRICT packedArray = reinterpret_cast<float*>(alloca(size));
     float* IGL_RESTRICT packedArrayPtr = packedArray;
     const float* paddedArrayPtr = reinterpret_cast<const float*>(value);
@@ -534,7 +550,7 @@ void ShaderUniforms::setFloat3x3(const igl::NameHandle& uniformName,
     // simdtypes::float3x3 has an extra float per float-vector.
     // Remove it so we can send the packed version to OpenGL
     float packedMatrix[9] = {0.0f};
-    auto paddedMatrixPtr = reinterpret_cast<const float*>(&value);
+    const auto* paddedMatrixPtr = reinterpret_cast<const float*>(&value);
     float* packedMatrixPtr = packedMatrix;
     for (int i = 0; i < 3; i++) {
       for (int j = 0; j < 3; j++) {
@@ -543,6 +559,44 @@ void ShaderUniforms::setFloat3x3(const igl::NameHandle& uniformName,
       paddedMatrixPtr++; // padded float
     }
     setUniformBytes(uniformName, &packedMatrix, sizeof(packedMatrix), 1, arrayIndex);
+  }
+}
+
+void ShaderUniforms::setFloat3x3(const igl::NameHandle& blockTypeName,
+                                 const igl::NameHandle& blockInstanceName,
+                                 const igl::NameHandle& uniformName,
+                                 const iglu::simdtypes::float3x3& value,
+                                 size_t arrayIndex) {
+  const bool isOglBlock = device_.getBackendType() == igl::BackendType::OpenGL &&
+                          _bufferDescs.find(blockTypeName) != _bufferDescs.end();
+  if (device_.getBackendType() == igl::BackendType::Metal ||
+      device_.getBackendType() == igl::BackendType::Vulkan || isOglBlock) {
+    setUniformBytes(blockTypeName,
+                    blockInstanceName,
+                    uniformName,
+                    &value,
+                    sizeof(iglu::simdtypes::float3x3),
+                    1,
+                    arrayIndex);
+  } else {
+    // simdtypes::float3x3 has an extra float per float-vector.
+    // Remove it so we can send the packed version to OpenGL
+    std::array<float, 9> packedMatrix{};
+    const auto* paddedMatrixPtr = reinterpret_cast<const float*>(&value);
+    float* packedMatrixPtr = packedMatrix.data();
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        *packedMatrixPtr++ = *paddedMatrixPtr++;
+      }
+      paddedMatrixPtr++; // padded float
+    }
+    setUniformBytes(blockTypeName,
+                    blockInstanceName,
+                    uniformName,
+                    &packedMatrix,
+                    sizeof(packedMatrix),
+                    1,
+                    arrayIndex);
   }
 }
 
@@ -556,9 +610,9 @@ void ShaderUniforms::setFloat3x3Array(const igl::NameHandle& uniformName,
   } else {
     // simdtypes::float3x3 has an extra float per float-vector.
     // Remove it so we can send the packed version to OpenGL
-    auto paddedMatrixPtr = reinterpret_cast<const float*>(value);
-    auto packedMatrix = new float[9 * count];
-    auto packedMatrixPtr = packedMatrix;
+    const auto* paddedMatrixPtr = reinterpret_cast<const float*>(value);
+    auto* packedMatrix = new float[9 * count];
+    auto* packedMatrixPtr = packedMatrix;
     for (int n = 0; n < count; n++) {
       for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
@@ -569,6 +623,52 @@ void ShaderUniforms::setFloat3x3Array(const igl::NameHandle& uniformName,
     }
     setUniformBytes(uniformName, packedMatrix, sizeof(float) * 9, count, arrayIndex);
     delete[] packedMatrix;
+  }
+}
+
+void ShaderUniforms::setFloat3x3Array(const igl::NameHandle& blockTypeName,
+                                      const igl::NameHandle& blockInstanceName,
+                                      const igl::NameHandle& memberName,
+                                      const iglu::simdtypes::float3x3* value,
+                                      size_t count,
+                                      size_t arrayIndex) {
+  auto isOglBlock = device_.getBackendType() == igl::BackendType::OpenGL &&
+                    _bufferDescs.find(blockTypeName) != _bufferDescs.end();
+
+  if (device_.getBackendType() == igl::BackendType::Metal ||
+      device_.getBackendType() == igl::BackendType::Vulkan || isOglBlock) {
+    setUniformBytes(blockTypeName,
+                    blockInstanceName,
+                    memberName,
+                    value,
+                    sizeof(iglu::simdtypes::float3x3),
+                    count,
+                    arrayIndex);
+  } else {
+    // simdtypes::float3x3 has an extra float per float-vector.
+    // Remove it so we can send the packed version to OpenGL
+    const size_t size = sizeof(float) * 9u * count;
+    IGL_DEBUG_ASSERT(size <= 65536);
+    float* IGL_RESTRICT packedMatrix = reinterpret_cast<float*>(alloca(size));
+    float* IGL_RESTRICT packedMatrixPtr = packedMatrix;
+
+    const auto* paddedMatrixPtr = reinterpret_cast<const float*>(value);
+    for (size_t n = 0; n < count; n++) {
+      for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+          *packedMatrixPtr++ = *paddedMatrixPtr++;
+        }
+        paddedMatrixPtr++; // skip over padded float
+      }
+    }
+
+    setUniformBytes(blockTypeName,
+                    blockInstanceName,
+                    memberName,
+                    packedMatrix,
+                    sizeof(float) * 9,
+                    count,
+                    arrayIndex);
   }
 }
 
@@ -634,6 +734,26 @@ void ShaderUniforms::setInt(const igl::NameHandle& blockTypeName,
                   arrayIndex);
 }
 
+void ShaderUniforms::setInt2(const igl::NameHandle& uniformName,
+                             const iglu::simdtypes::int2& value,
+                             size_t arrayIndex) {
+  setUniformBytes(uniformName, &value, sizeof(iglu::simdtypes::int2), 1, arrayIndex);
+}
+
+void ShaderUniforms::setInt2(const igl::NameHandle& blockTypeName,
+                             const igl::NameHandle& blockInstanceName,
+                             const igl::NameHandle& memberName,
+                             const iglu::simdtypes::int2& value,
+                             size_t arrayIndex) {
+  setUniformBytes(blockTypeName,
+                  blockInstanceName,
+                  memberName,
+                  &value,
+                  sizeof(iglu::simdtypes::int2),
+                  1,
+                  arrayIndex);
+}
+
 void ShaderUniforms::setIntArray(const igl::NameHandle& uniformName,
                                  const iglu::simdtypes::int1* value,
                                  size_t count,
@@ -660,7 +780,7 @@ void ShaderUniforms::setTexture(const std::string& name,
                                 const std::shared_ptr<igl::ITexture>& value,
                                 const std::shared_ptr<igl::ISamplerState>& sampler,
                                 IGL_MAYBE_UNUSED size_t arrayIndex) {
-  IGL_ASSERT_MSG(arrayIndex == 0, "texture arrays not supported");
+  IGL_DEBUG_ASSERT(arrayIndex == 0, "texture arrays not supported");
   auto it = _allTexturesByName.find(name);
   if (it == _allTexturesByName.end()) {
     IGL_LOG_ERROR_ONCE("[IGL][Error] Invalid texture name: %s\n", name.c_str());
@@ -711,11 +831,11 @@ void ShaderUniforms::bindUniformOpenGL(const igl::NameHandle& uniformName,
     auto strongBuffer = uniformDesc.buffer.lock();
     if (strongBuffer) {
       // We are binding individual uniforms. Confirm that iglBuffer is null
-      IGL_ASSERT(strongBuffer->allocation->iglBuffer == nullptr);
+      IGL_DEBUG_ASSERT(strongBuffer->allocation->iglBuffer == nullptr);
       encoder.bindUniform(desc, strongBuffer->allocation->ptr);
     }
   } else {
-    IGL_LOG_ERROR_ONCE("[IGL][Error] Uniform not found in shader: %s\n", uniformName.toConstChar());
+    IGL_LOG_ERROR_ONCE("[IGL][Error] Uniform not found in shader: %s\n", uniformName.c_str());
   }
 }
 #endif
@@ -731,20 +851,18 @@ void ShaderUniforms::bindBuffer(igl::IDevice& device,
 #if IGL_BACKEND_OPENGL
     const auto& uniformName = buffer->iglBufferDesc.name;
     if (buffer->iglBufferDesc.isUniformBlock) {
-      IGL_ASSERT(buffer->allocation->iglBuffer != nullptr);
+      IGL_DEBUG_ASSERT(buffer->allocation->iglBuffer != nullptr);
       buffer->allocation->iglBuffer->upload(buffer->allocation->ptr,
                                             igl::BufferRange(buffer->allocation->size, 0));
       const auto& glPipelineState =
           static_cast<const igl::opengl::RenderPipelineState&>(pipelineState);
       encoder.bindBuffer(glPipelineState.getUniformBlockBindingPoint(uniformName),
-                         bindTargetForShaderStage(buffer->iglBufferDesc.shaderStage),
-                         buffer->allocation->iglBuffer,
-                         0);
+                         buffer->allocation->iglBuffer.get());
     } else {
       // not a uniform block
-      IGL_ASSERT(buffer->iglBufferDesc.name == buffer->iglBufferDesc.members[0].name);
-      IGL_ASSERT(buffer->uniforms.size() == 1);
-      IGL_ASSERT(buffer->iglBufferDesc.name == buffer->uniforms[0].iglMemberDesc.name);
+      IGL_DEBUG_ASSERT(buffer->iglBufferDesc.name == buffer->iglBufferDesc.members[0].name);
+      IGL_DEBUG_ASSERT(buffer->uniforms.size() == 1);
+      IGL_DEBUG_ASSERT(buffer->iglBufferDesc.name == buffer->uniforms[0].iglMemberDesc.name);
       auto& uniformDesc = buffer->uniforms[0];
 
       bindUniformOpenGL(uniformName, uniformDesc, pipelineState, encoder);
@@ -761,15 +879,8 @@ void ShaderUniforms::bindBuffer(igl::IDevice& device,
 
       buffer->allocation->iglBuffer->upload((uint8_t*)buffer->allocation->ptr + subAllocatedOffset,
                                             igl::BufferRange(uploadSize, subAllocatedOffset));
-      uint8_t bindTarget;
-      if (device.getBackendType() == igl::BackendType::Vulkan) {
-        bindTarget = igl::BindTarget::kAllGraphics;
-      } else {
-        bindTarget = bindTargetForShaderStage(buffer->iglBufferDesc.shaderStage);
-      }
       encoder.bindBuffer(buffer->iglBufferDesc.bufferIndex,
-                         bindTarget,
-                         buffer->allocation->iglBuffer,
+                         buffer->allocation->iglBuffer.get(),
                          subAllocatedOffset);
     } else {
       encoder.bindBytes(buffer->iglBufferDesc.bufferIndex,
@@ -787,13 +898,29 @@ void ShaderUniforms::bind(igl::IDevice& device,
                           const igl::NameHandle& uniformName) {
   auto range = _allUniformsByName.equal_range(uniformName);
   if (range.first == range.second) {
-    IGL_LOG_ERROR_ONCE("[IGL][Error] Invalid uniform name: %s\n", uniformName.toConstChar());
+    IGL_LOG_ERROR_ONCE("[IGL][Error] Invalid uniform name: %s\n", uniformName.c_str());
     return;
   }
 
   for (auto it = range.first; it != range.second; ++it) {
     auto strongBuffer = it->second.buffer.lock();
     bindBuffer(device, pipelineState, encoder, strongBuffer.get());
+  }
+}
+
+void ShaderUniforms::bind(igl::IDevice& device,
+                          const igl::IRenderPipelineState& pipelineState,
+                          igl::IRenderCommandEncoder& encoder,
+                          const igl::NameHandle& blockName,
+                          const igl::NameHandle& blockInstanceName,
+                          const igl::NameHandle& memberName) {
+  auto possibleBufferNames =
+      getPossibleBufferAndMemberNames(blockName, blockInstanceName, memberName);
+  for (auto& [bufferName, bufferMemberName] : possibleBufferNames) {
+    auto range = _bufferDescs.equal_range(bufferName);
+    for (auto bufferDescIt = range.first; bufferDescIt != range.second; ++bufferDescIt) {
+      bindBuffer(device, pipelineState, encoder, bufferDescIt->second.get());
+    }
   }
 }
 
@@ -887,13 +1014,19 @@ igl::Result ShaderUniforms::setSuballocationIndex(const igl::NameHandle& name, i
 bool ShaderUniforms::containsUniform(const igl::NameHandle& blockTypeName,
                                      const igl::NameHandle& blockInstanceName,
                                      const igl::NameHandle& memberName) {
-  auto bufferName = getBufferName(blockTypeName, blockInstanceName, memberName);
-  auto bufferDescIt = _bufferDescs.find(bufferName);
-  if (bufferDescIt == _bufferDescs.end()) {
-    return false;
+  auto possibleBufferNames =
+      getPossibleBufferAndMemberNames(blockTypeName, blockInstanceName, memberName);
+
+  for (auto& [bufferName, bufferMemberName] : possibleBufferNames) {
+    auto bufferDescIt = _bufferDescs.find(bufferName);
+    if (bufferDescIt == _bufferDescs.end()) {
+      continue;
+    }
+    auto& bufferDesc = bufferDescIt->second;
+    if (bufferDesc->memberIndices.find(bufferMemberName) != bufferDesc->memberIndices.end()) {
+      return true;
+    }
   }
-  auto& bufferDesc = bufferDescIt->second;
-  auto bufferMemberName = getBufferMemberName(blockTypeName, blockInstanceName, memberName);
-  return bufferDesc->memberIndices.find(bufferMemberName) != bufferDesc->memberIndices.end();
+  return false;
 }
 } // namespace iglu::material

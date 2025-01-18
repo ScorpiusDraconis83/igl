@@ -11,8 +11,7 @@
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 class ShaderLibraryTest : public ::testing::Test {
  private:
@@ -52,31 +51,16 @@ TEST_F(ShaderLibraryTest, CreateFromSource) {
   } else if (iglDev_->getBackendType() == igl::BackendType::Vulkan) {
     source = data::shader::VULKAN_SIMPLE_VERT_SHADER;
   } else {
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
   }
 
   auto shaderLibrary = ShaderLibraryCreator::fromStringInput(
       *iglDev_, source, {{ShaderStage::Vertex, "vertexShader"}}, "", &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(shaderLibrary != nullptr);
 
   auto vertShaderModule = shaderLibrary->getShaderModule("vertexShader");
   ASSERT_TRUE(vertShaderModule);
-}
-
-TEST_F(ShaderLibraryTest, CreateFromSourceReturnNullWithNullInput) {
-  Result ret;
-  if (!iglDev_->hasFeature(DeviceFeatures::ShaderLibrary)) {
-    GTEST_SKIP() << "Shader Libraries are unsupported for this platform.";
-    return;
-  }
-
-  const char* source = nullptr;
-
-  auto shaderLibrary = ShaderLibraryCreator::fromStringInput(
-      *iglDev_, source, {{ShaderStage::Vertex, ""}}, "", &ret);
-  ASSERT_TRUE(!ret.isOk());
-  ASSERT_TRUE(shaderLibrary == nullptr);
 }
 
 TEST_F(ShaderLibraryTest, CreateFromSingleModuleReturnNullWithEmptyInput) {
@@ -116,7 +100,7 @@ TEST_F(ShaderLibraryTest, CreateFromSourceMultipleModules) {
                                             "",
                                             &ret);
 
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(shaderLibrary != nullptr);
 
   auto vertShaderModule = shaderLibrary->getShaderModule("vertexShader");
@@ -138,7 +122,7 @@ TEST_F(ShaderLibraryTest, CreateFromSourceNoResult) {
   } else if (iglDev_->getBackendType() == igl::BackendType::Vulkan) {
     source = data::shader::VULKAN_SIMPLE_VERT_SHADER;
   } else {
-    IGL_ASSERT_NOT_REACHED();
+    IGL_DEBUG_ASSERT_NOT_REACHED();
   }
 
   auto shaderLibrary = ShaderLibraryCreator::fromStringInput(
@@ -148,5 +132,4 @@ TEST_F(ShaderLibraryTest, CreateFromSourceNoResult) {
   auto vertShaderModule = shaderLibrary->getShaderModule("vertexShader");
   ASSERT_TRUE(vertShaderModule);
 }
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

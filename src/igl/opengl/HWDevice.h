@@ -14,7 +14,7 @@
 
 #if IGL_PLATFORM_ANDROID || IGL_PLATFORM_LINUX || IGL_PLATFORM_EMSCRIPTEN
 #include <EGL/eglplatform.h>
-#elif IGL_PLATFORM_IOS || IGL_PLATFORM_MACOS
+#elif IGL_PLATFORM_IOS || IGL_PLATFORM_MACOSX
 #define EGLNativeWindowType void*
 #elif IGL_ANGLE || defined(IGL_CMAKE_BUILD)
 #include <EGL/eglplatform.h>
@@ -28,8 +28,7 @@
 #define IGL_EGL_NULL_WINDOW nullptr
 #endif
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 class HWDevice {
  public:
@@ -52,5 +51,4 @@ class HWDevice {
                                   Result* outResult = nullptr);
 };
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

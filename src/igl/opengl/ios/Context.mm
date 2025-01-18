@@ -15,9 +15,7 @@
 #include <igl/opengl/Texture.h>
 #import <objc/runtime.h>
 
-namespace igl {
-namespace opengl {
-namespace ios {
+namespace igl::opengl::ios {
 namespace {
 EAGLContext* createEAGLContext(RenderingAPI api, EAGLSharegroup* sharegroup) {
   if (api == RenderingAPI::GLES3) {
@@ -28,8 +26,8 @@ EAGLContext* createEAGLContext(RenderingAPI api, EAGLSharegroup* sharegroup) {
     }
     return context;
   } else {
-    IGL_ASSERT_MSG(api == RenderingAPI::GLES2,
-                   "IGL: unacceptable enum for rendering API for iOS\n");
+    IGL_DEBUG_ASSERT(api == RenderingAPI::GLES2,
+                     "IGL: unacceptable enum for rendering API for iOS\n");
     return [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2 sharegroup:sharegroup];
   }
 }
@@ -140,6 +138,4 @@ CVOpenGLESTextureCacheRef Context::getTextureCache() {
   return textureCache_;
 }
 
-} // namespace ios
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl::ios

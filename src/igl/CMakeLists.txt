@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 
 project(IGLLibrary CXX C)
 
@@ -17,15 +17,26 @@ if(WIN32)
   list(APPEND HEADER_FILES win/LogDefault.h)
 endif()
 
+if(ANDROID)
+  list(APPEND SRC_FILES android/LogDefault.cpp)
+  list(APPEND HEADER_FILES android/LogDefault.h)
+  list(APPEND SRC_FILES android/NativeHWBuffer.cpp)
+  list(APPEND HEADER_FILES android/NativeHWBuffer.h)
+endif()
+
 add_library(IGLLibrary ${SRC_FILES} ${HEADER_FILES})
 
 target_include_directories(IGLLibrary PUBLIC "${IGL_ROOT_DIR}/src")
 target_include_directories(IGLLibrary PUBLIC "${IGL_ROOT_DIR}/third-party/deps/src/glm")
 
-target_link_libraries(IGLLibrary PUBLIC fmt)
+if(NOT EMSCRIPTEN)
+  target_link_libraries(IGLLibrary PUBLIC fmt)
+endif()
 
-igl_set_cxxstd(IGLLibrary 17)
+igl_set_cxxstd(IGLLibrary 20)
 igl_set_folder(IGLLibrary "IGL")
+
+add_subdirectory(glslang)
 
 if(IGL_WITH_OPENGL OR IGL_WITH_OPENGLES OR IGL_WITH_WEBGL)
   add_subdirectory(opengl)
@@ -46,7 +57,7 @@ endif()
 # tests are disabled for now on Windows
 if(IGL_WITH_TESTS AND IGL_WITH_IGLU AND (IGL_WITH_VULKAN OR (NOT WIN32)))
   add_subdirectory(tests)
-  if(IGL_WITH_OPENGL OR IGL_WITH_OPENGLES)
+  if((IGL_WITH_OPENGL OR IGL_WITH_OPENGLES) AND NOT APPLE)
     target_sources(IGLTests PRIVATE opengl/egl/Context.cpp opengl/egl/Device.cpp opengl/egl/HWDevice.cpp
                                     opengl/egl/PlatformDevice.cpp)
   endif()

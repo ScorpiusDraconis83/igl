@@ -5,14 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #pragma once
 
 #include <igl/IGL.h>
 #include <memory>
 #include <string>
 
-namespace iglu {
-namespace material {
+namespace iglu::material {
 
 /// Aggregates a vertex and a fragment module to extract shader reflection
 /// information that can be used ahead of drawing.
@@ -21,7 +22,7 @@ class ShaderProgram final {
   /// Retrieve shader reflection information. This is particularly useful in
   /// scenarios where the application can't make fixed assumptions about the
   /// layout of the uniforms within a shader.
-  const igl::IRenderPipelineReflection& renderPipelineReflection() const;
+  [[nodiscard]] const igl::IRenderPipelineReflection& renderPipelineReflection() const;
 
   /// Populates a pipeline descriptor for drawing using this shader program.
   void populatePipelineDescriptor(igl::RenderPipelineDesc& pipelineDesc) const;
@@ -46,5 +47,4 @@ class ShaderProgram final {
   std::shared_ptr<igl::IRenderPipelineReflection> _reflection;
 };
 
-} // namespace material
-} // namespace iglu
+} // namespace iglu::material

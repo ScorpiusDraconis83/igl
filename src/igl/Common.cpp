@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <igl/Common.h>
+#include <igl/Device.h>
 
 namespace igl {
 
@@ -60,6 +61,38 @@ void optimizedMemcpy(void* dst, const void* src, size_t size) {
     break;
   default:
     memcpy(dst, src, size);
+  }
+}
+
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::BindGroupTextureHandle handle) {
+  if (device) {
+    device->destroy(handle);
+  }
+}
+
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::BindGroupBufferHandle handle) {
+  if (device) {
+    device->destroy(handle);
+  }
+}
+
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::TextureHandle handle) {
+  if (device) {
+    // do nothing until we transition all textures to handles
+    (void)handle;
+  }
+}
+
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::SamplerHandle handle) {
+  if (device) {
+    device->destroy(handle);
+  }
+}
+
+void destroy(igl::IDevice* IGL_NULLABLE device, igl::DepthStencilStateHandle handle) {
+  if (device) {
+    // do nothing until we transition depth-stencil states to handles
+    (void)handle;
   }
 }
 

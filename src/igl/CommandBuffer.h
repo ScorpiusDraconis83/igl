@@ -16,7 +16,6 @@ namespace igl {
 
 class IComputeCommandEncoder;
 class ISamplerState;
-class ITexture;
 struct RenderPassDesc;
 
 /**
@@ -32,15 +31,6 @@ struct CommandBufferDesc {
  */
 struct CommandBufferStatistics {
   uint32_t currentDrawCount = 0;
-};
-
-/**
- * Dependencies are used to issue proper memory barriers for external resources, such as textures
- * modified by non-IGL code (Skia, Qt, etc), and synchronize between graphics and compute pipelines.
- */
-struct Dependencies {
-  static constexpr uint32_t IGL_MAX_TEXTURE_DEPENDENCIES = 4;
-  ITexture* IGL_NULLABLE textures[IGL_MAX_TEXTURE_DEPENDENCIES] = {};
 };
 
 /**
@@ -69,15 +59,15 @@ class ICommandBuffer {
    */
   virtual std::unique_ptr<IRenderCommandEncoder> createRenderCommandEncoder(
       const RenderPassDesc& renderPass,
-      std::shared_ptr<IFramebuffer> framebuffer,
+      const std::shared_ptr<IFramebuffer>& framebuffer,
       const Dependencies& dependencies,
-      Result* IGL_NULLABLE outResult) = 0;
+      Result* IGL_NULLABLE outResult = nullptr) = 0;
 
-  // Use an overload here instead of a default parameter in a pure virtual function.
   std::unique_ptr<IRenderCommandEncoder> createRenderCommandEncoder(
       const RenderPassDesc& renderPass,
-      std::shared_ptr<IFramebuffer> framebuffer) {
-    return createRenderCommandEncoder(renderPass, std::move(framebuffer), Dependencies{}, nullptr);
+      const std::shared_ptr<IFramebuffer>& framebuffer,
+      Result* IGL_NULLABLE outResult = nullptr) {
+    return createRenderCommandEncoder(renderPass, framebuffer, Dependencies(), outResult);
   }
 
   /**
@@ -93,7 +83,7 @@ class ICommandBuffer {
    * @param surface takes a texture param representing a drawable that depends on the results of the
    * GPU commands. Note: this param is unused when using the OpenGL backend.
    */
-  virtual void present(std::shared_ptr<ITexture> surface) const = 0;
+  virtual void present(const std::shared_ptr<ITexture>& surface) const = 0;
 
   /**
    * @brief Blocks execution of the current thread until the commands encoded in this
@@ -130,7 +120,7 @@ class ICommandBuffer {
    * @returns the number of draw operations tracked by this CommandBuffer. This is tracked manually
    * via calls to incrementCurrentDrawCount().
    */
-  uint32_t getCurrentDrawCount() const {
+  [[nodiscard]] uint32_t getCurrentDrawCount() const {
     return statistics_.currentDrawCount;
   }
   /**

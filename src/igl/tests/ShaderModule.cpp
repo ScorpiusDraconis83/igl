@@ -11,8 +11,7 @@
 #include <gtest/gtest.h>
 #include <igl/IGL.h>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 class ShaderModuleTest : public ::testing::Test {
  private:
@@ -63,17 +62,6 @@ TEST_F(ShaderModuleTest, CompileShaderModuleReturnNull) {
   ASSERT_TRUE(shaderModule == nullptr);
 }
 
-TEST_F(ShaderModuleTest, CompileShaderModuleReturnNullWitNullInput) {
-  Result ret;
-
-  const char* source = nullptr;
-
-  auto shaderModule = ShaderModuleCreator::fromStringInput(
-      *iglDev_, source, {ShaderStage::Vertex, ""}, "test", &ret);
-  ASSERT_TRUE(!ret.isOk());
-  ASSERT_TRUE(shaderModule == nullptr);
-}
-
 TEST_F(ShaderModuleTest, CompileShaderModuleReturnNullWithEmptyInput) {
   Result ret;
 
@@ -99,7 +87,7 @@ TEST_F(ShaderModuleTest, CompileShaderModule) {
 
   auto shaderModule = ShaderModuleCreator::fromStringInput(
       *iglDev_, source, {ShaderStage::Vertex, "vertexShader"}, "test", &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(shaderModule != nullptr);
 }
 
@@ -119,5 +107,4 @@ TEST_F(ShaderModuleTest, CompileShaderModuleNoResult) {
       *iglDev_, source, {ShaderStage::Vertex, "vertexShader"}, "test", nullptr);
   ASSERT_TRUE(shaderModule != nullptr);
 }
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

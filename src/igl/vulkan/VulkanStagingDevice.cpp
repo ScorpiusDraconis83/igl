@@ -19,9 +19,9 @@
 
 using VulkanSubmitHandle = igl::vulkan::VulkanImmediateCommands::SubmitHandle;
 
-namespace igl {
+constexpr VkDeviceSize kMinStagingBufferSize = static_cast<const VkDeviceSize>(1024u) * 1024u;
 
-namespace vulkan {
+namespace igl::vulkan {
 
 VulkanStagingDevice::VulkanStagingDevice(VulkanContext& ctx) : ctx_(ctx) {
   IGL_PROFILER_FUNCTION();
@@ -37,7 +37,7 @@ VulkanStagingDevice::VulkanStagingDevice(VulkanContext& ctx) : ctx_(ctx) {
       ctx_.deviceQueues_.graphicsQueueFamilyIndex,
       ctx_.config_.exportableFences,
       "VulkanStagingDevice::immediate_");
-  IGL_ASSERT(immediate_.get());
+  IGL_DEBUG_ASSERT(immediate_.get());
 }
 
 void VulkanStagingDevice::bufferSubData(VulkanBuffer& buffer,
@@ -59,22 +59,24 @@ void VulkanStagingDevice::bufferSubData(VulkanBuffer& buffer,
 
   while (size) {
     // finds a free memory block to store the data in the staging buffer
-    MemoryRegion memoryChunk = nextFreeBlock(size);
+    MemoryRegion memoryChunk = nextFreeBlock(size, false);
     const VkDeviceSize copySize = std::min(static_cast<VkDeviceSize>(size), memoryChunk.size);
 
 #if IGL_VULKAN_DEBUG_STAGING_DEVICE
     IGL_LOG_INFO("\tUploading %u bytes\n", copySize);
 #endif
 
+    auto& stagingBuffer = stagingBuffers_[memoryChunk.stagingBufferIndex];
+
     // copy data into the staging buffer
-    stagingBuffer_->bufferSubData(memoryChunk.offset, copySize, copyData);
+    stagingBuffer->bufferSubData(memoryChunk.offset, copySize, copyData);
 
     // do the transfer
     const VkBufferCopy copy = {memoryChunk.offset, chunkDstOffset, copySize};
 
-    auto& wrapper = immediate_->acquire();
+    const auto& wrapper = immediate_->acquire();
     ctx_.vf_.vkCmdCopyBuffer(
-        wrapper.cmdBuf_, stagingBuffer_->getVkBuffer(), buffer.getVkBuffer(), 1, &copy);
+        wrapper.cmdBuf_, stagingBuffer->getVkBuffer(), buffer.getVkBuffer(), 1, &copy);
     memoryChunk.handle = immediate_->submit(wrapper); // store the submit handle with the allocation
     regions_.push_back(memoryChunk);
 
@@ -84,74 +86,130 @@ void VulkanStagingDevice::bufferSubData(VulkanBuffer& buffer,
   }
 }
 
-VulkanStagingDevice::MemoryRegion VulkanStagingDevice::nextFreeBlock(VkDeviceSize size) {
+void VulkanStagingDevice::mergeRegionsAndFreeBuffers() {
+  uint32_t regionIndex = 0;
+  while (regionIndex < regions_.size() && immediate_->isReady(regions_[regionIndex].handle)) {
+    auto& currRegion = regions_[regionIndex];
+
+    // set empty handle for a region, if it has finished processing
+    // so handle.empty() check can be done later
+    if (!currRegion.handle.empty() && immediate_->isReady(currRegion.handle)) {
+      currRegion.handle = VulkanImmediateCommands::SubmitHandle();
+      freeStagingBufferSize_ += currRegion.size;
+    }
+
+    // if a next region exist and is not busy
+    if ((regionIndex + 1) < regions_.size() && regions_[regionIndex + 1].handle.empty()) {
+      auto& nextRegion = regions_[regionIndex + 1];
+      // if current and next region are parts of the same buffer
+      if (currRegion.stagingBufferIndex == nextRegion.stagingBufferIndex) {
+        // if current and next region are adjacent memory blocks, merge them into one
+        const bool adjacentRegions = (currRegion.size + currRegion.offset) == nextRegion.offset ||
+                                     (nextRegion.size + nextRegion.offset) == currRegion.offset;
+
+        if (adjacentRegions) {
+          const MemoryRegion newRegion = {std::min(currRegion.offset, nextRegion.offset),
+                                          currRegion.size + nextRegion.size,
+                                          currRegion.alignedSize,
+                                          VulkanImmediateCommands::SubmitHandle(),
+                                          currRegion.stagingBufferIndex};
+          nextRegion = newRegion;
+          regions_.erase(regions_.begin() + regionIndex);
+          continue;
+        }
+      } else {
+        // if current and next region are not parts of the same buffer
+        // move region with smaller staging buffer index first, so regions would eventually line up
+        // if they have been split
+        if (currRegion.stagingBufferIndex > nextRegion.stagingBufferIndex) {
+          std::swap(currRegion, nextRegion);
+        }
+      }
+    }
+
+    // if a staging buffer is completely recovered
+    if (currRegion.size == currRegion.alignedSize) {
+      freeStagingBufferSize_ -= currRegion.size;
+      // free the staging buffer
+      stagingBuffers_[currRegion.stagingBufferIndex].reset();
+      // remove the region
+      regions_.erase(regions_.begin() + regionIndex);
+
+      // remove trailing empty staging buffers
+      while (!stagingBuffers_.empty() && stagingBuffers_.back().get() == nullptr) {
+        stagingBuffers_.pop_back();
+      }
+      continue;
+    }
+
+    regionIndex++;
+  }
+
+#if IGL_VULKAN_DEBUG_STAGING_DEVICE
+  IGL_LOG_INFO("Regions: %d Staging buffers: %d Free space: %d\n",
+               regions_.size(),
+               stagingBuffers_.size(),
+               freeStagingBufferSize_);
+#endif
+}
+
+VulkanStagingDevice::MemoryRegion VulkanStagingDevice::nextFreeBlock(VkDeviceSize size,
+                                                                     bool contiguous) {
   IGL_PROFILER_FUNCTION();
 
   const VkDeviceSize requestedAlignedSize = getAlignedSize(size);
 
-  if (shouldGrowStagingBuffer(requestedAlignedSize)) {
-    growStagingBuffer(nextSize(requestedAlignedSize));
+  if (shouldAllocateStagingBuffer(requestedAlignedSize, contiguous)) {
+    allocateStagingBuffer(nextSize(requestedAlignedSize));
   }
 
-  IGL_ASSERT(!regions_.empty());
+  IGL_DEBUG_ASSERT(!regions_.empty());
 
 #if IGL_VULKAN_DEBUG_STAGING_DEVICE
   IGL_LOG_INFO("nextFreeBlock() with %u bytes, aligned %u bytes\n", size, requestedAlignedSize);
 #endif
 
-  // If we can't find an empty free region that is as big as the requestedAlignedSize, return
-  // whatever we could find, which will be stored in bestNextIt
-  auto bestNextIt = regions_.begin();
-
-  for (auto it = regions_.begin(); it != regions_.end(); ++it) {
-    if (immediate_->isReady(it->handle)) {
-      // This region is free, but is it big enough?
-      if (it->size >= requestedAlignedSize) {
-        // It is big enough!
-        const uint32_t unusedSize = it->size - requestedAlignedSize;
-        const uint32_t unusedOffset = it->offset + requestedAlignedSize;
-
-        // Return this region and add the remaining unused size to the regions_ deque
-        IGL_SCOPE_EXIT {
-          regions_.erase(it);
-          if (unusedSize > 0) {
-            regions_.push_front(
-                {unusedOffset, unusedSize, unusedSize, VulkanImmediateCommands::SubmitHandle()});
-          }
-        };
-
-#if IGL_VULKAN_DEBUG_STAGING_DEVICE
-        IGL_LOG_INFO("Found block with %u bytes at offset %u\n", it->size, it->offset);
-#endif
-
-        return {it->offset, size, requestedAlignedSize, VulkanImmediateCommands::SubmitHandle()};
-      }
-
-      // Cache the largest available region that isn't as big as the one we're looking for
-      if (it->size > bestNextIt->size) {
-        bestNextIt = it;
-      }
+  VkDeviceSize allocatedSize = 0;
+  // at this point, there should be a free region that can fit the requested size
+  auto regionItr = regions_.begin();
+  while (regionItr != regions_.end()) {
+    // if requested size is available or if contiguous memory is not requested
+    if ((regionItr->size >= requestedAlignedSize || !contiguous) &&
+        (immediate_->isReady(regionItr->handle))) {
+      allocatedSize = std::min(regionItr->size, requestedAlignedSize);
+      break;
     }
+    regionItr++;
   }
 
-  // We found a region that is available that is smaller than the requested size. It's the best we
-  // can do
-  if (bestNextIt != regions_.end() && immediate_->isReady(bestNextIt->handle)) {
+  IGL_DEBUG_ASSERT(allocatedSize);
+
+  if (allocatedSize) {
+    const uint32_t newSize = regionItr->size - allocatedSize;
+    const uint32_t newOffset = regionItr->offset + allocatedSize;
+    const uint32_t stagingBufferIndex = regionItr->stagingBufferIndex;
+
+    const MemoryRegion allocatedRegion = {regionItr->offset,
+                                          allocatedSize,
+                                          regionItr->alignedSize,
+                                          VulkanImmediateCommands::SubmitHandle(),
+                                          stagingBufferIndex};
+
+    // Return this region and add the remaining unused size to the regions_ deque
     IGL_SCOPE_EXIT {
-      regions_.erase(bestNextIt);
+      if (newSize > 0) {
+        *regionItr = {newOffset,
+                      newSize,
+                      regionItr->alignedSize,
+                      VulkanImmediateCommands::SubmitHandle(),
+                      stagingBufferIndex};
+      } else {
+        regions_.erase(regionItr);
+      }
     };
 
-#if IGL_VULKAN_DEBUG_STAGING_DEVICE
-    IGL_LOG_INFO("Found block smaller than size needed with %u bytes (%u aligned) at offset %u\n",
-                 bestNextIt->size,
-                 bestNextIt->alignedSize,
-                 bestNextIt->offset);
-#endif
-
-    return {bestNextIt->offset,
-            bestNextIt->size,
-            bestNextIt->alignedSize,
-            VulkanImmediateCommands::SubmitHandle()};
+    freeStagingBufferSize_ -= allocatedSize;
+    return allocatedRegion;
   }
 
 #if IGL_VULKAN_DEBUG_STAGING_DEVICE
@@ -163,27 +221,18 @@ VulkanStagingDevice::MemoryRegion VulkanStagingDevice::nextFreeBlock(VkDeviceSiz
   // Nothing was available. Let's wait for the entire staging buffer to become free
   waitAndReset();
 
-  // waitAndReset() adds a region that spans the entire buffer. Since we'll be using part of it, we
-  // need to replace it with a used block and an unused portion
-  regions_.clear();
+  // try to allocate a new staging buffer
+  allocateStagingBuffer(nextSize(requestedAlignedSize));
+  IGL_DEBUG_ASSERT(!regions_.empty());
 
-  // Store the unused size in the deque first...
-  const VkDeviceSize unusedSize =
-      stagingBufferSize_ > requestedAlignedSize ? stagingBufferSize_ - requestedAlignedSize : 0;
-  if (unusedSize > 0) {
-    const uint32_t unusedOffset = requestedAlignedSize;
-    regions_.push_front(
-        {unusedOffset, unusedSize, unusedSize, VulkanImmediateCommands::SubmitHandle()});
+  if (!regions_.empty()) { // if a valid region is available, return it
+    freeStagingBufferSize_ -= requestedAlignedSize;
+    return regions_.front();
   }
-
-  //... and then return the smallest free region that can hold the requested size
-  return {0,
-          std::min(size, stagingBufferSize_),
-          std::min(requestedAlignedSize, stagingBufferSize_),
-          VulkanImmediateCommands::SubmitHandle()};
+  return {};
 }
 
-void VulkanStagingDevice::getBufferSubData(VulkanBuffer& buffer,
+void VulkanStagingDevice::getBufferSubData(const VulkanBuffer& buffer,
                                            size_t srcOffset,
                                            size_t size,
                                            void* data) {
@@ -202,33 +251,35 @@ void VulkanStagingDevice::getBufferSubData(VulkanBuffer& buffer,
   const size_t bufferSize = size;
 
   while (size) {
-    MemoryRegion memoryChunk = nextFreeBlock(size);
+    const MemoryRegion memoryChunk = nextFreeBlock(size, false);
     const VkDeviceSize copySize = std::min(static_cast<VkDeviceSize>(size), memoryChunk.size);
 
     // do the transfer
     const VkBufferCopy copy = {chunkSrcOffset, memoryChunk.offset, copySize};
 
-    auto& wrapper = immediate_->acquire();
+    const auto& wrapper = immediate_->acquire();
+
+    auto& stagingBuffer = stagingBuffers_[memoryChunk.stagingBufferIndex];
 
     ctx_.vf_.vkCmdCopyBuffer(
-        wrapper.cmdBuf_, buffer.getVkBuffer(), stagingBuffer_->getVkBuffer(), 1, &copy);
+        wrapper.cmdBuf_, buffer.getVkBuffer(), stagingBuffer->getVkBuffer(), 1, &copy);
 
     // Wait for command to finish
-    immediate_->wait(immediate_->submit(wrapper));
+    immediate_->wait(immediate_->submit(wrapper), ctx_.config_.fenceTimeoutNanoseconds);
 
     // Copy data into data
-    const uint8_t* src = stagingBuffer_->getMappedPtr() + memoryChunk.offset;
-    checked_memcpy(dstData, bufferSize - chunkSrcOffset, src, memoryChunk.size);
+    const uint8_t* src = stagingBuffer->getMappedPtr() + memoryChunk.offset;
+    checked_memcpy(dstData, bufferSize - chunkSrcOffset, src, copySize);
 
     size -= copySize;
     dstData = (uint8_t*)dstData + copySize;
     chunkSrcOffset += copySize;
 
-    regions_.push_front(memoryChunk);
+    regions_.push_back(memoryChunk);
   }
 }
 
-void VulkanStagingDevice::imageData(VulkanImage& image,
+void VulkanStagingDevice::imageData(const VulkanImage& image,
                                     TextureType type,
                                     const TextureRangeDesc& range,
                                     const TextureFormatProperties& properties,
@@ -236,41 +287,142 @@ void VulkanStagingDevice::imageData(VulkanImage& image,
                                     const void* data) {
   IGL_PROFILER_FUNCTION();
 
+  const bool is420 = (image.imageFormat_ == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) ||
+                     (image.imageFormat_ == VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM);
+
+  // @fb-only
   const uint32_t storageSize =
-      static_cast<uint32_t>(properties.getBytesPerRange(range, bytesPerRow));
+      is420 ? image.extent_.width * image.extent_.height * 3u / 2u
+            : static_cast<uint32_t>(properties.getBytesPerRange(range, bytesPerRow));
+
+  IGL_DEBUG_ASSERT(storageSize);
 
   // We don't support uploading image data in small chunks. If the total upload size exceeds the
   // the maximum allowed staging buffer size, we can't upload it
-  IGL_ASSERT_MSG(storageSize <= maxStagingBufferSize_,
-                 "Image size exceeds maximum size of staging buffer");
+  IGL_DEBUG_ASSERT(storageSize <= maxStagingBufferSize_,
+                   "Image size exceeds maximum size of staging buffer");
 
 #if IGL_VULKAN_DEBUG_STAGING_DEVICE
   IGL_LOG_INFO("Image upload requested for data with %u bytes\n", storageSize);
 #endif
 
   // get next staging buffer free offset
-  MemoryRegion memoryChunk = nextFreeBlock(storageSize);
+  MemoryRegion memoryChunk = nextFreeBlock(storageSize, true);
 
-  IGL_ASSERT(storageSize <= stagingBufferSize_);
-
-  // currently, no support for copying image in multiple smaller chunk sizes.
-  // If we get smaller buffer size than storageSize, we will wait for gpu idle and get bigger chunk.
-  if (memoryChunk.size < storageSize) {
-    waitAndReset();
-    memoryChunk = nextFreeBlock(storageSize);
-  }
-
-  IGL_ASSERT(memoryChunk.size >= storageSize);
+  IGL_DEBUG_ASSERT(memoryChunk.size >= storageSize);
+  auto& stagingBuffer = stagingBuffers_[memoryChunk.stagingBufferIndex];
 
   // 1. Copy the pixel data into the host visible staging buffer
-  stagingBuffer_->bufferSubData(memoryChunk.offset, storageSize, data);
+  stagingBuffer->bufferSubData(memoryChunk.offset, storageSize, data);
 
-  auto& wrapper = immediate_->acquire();
+  const auto& wrapper = immediate_->acquire();
   const uint32_t initialLayer = getVkLayer(type, range.face, range.layer);
   const uint32_t numLayers = getVkLayer(type, range.numFaces, range.numLayers);
 
   std::vector<VkBufferImageCopy> copyRegions;
   copyRegions.reserve(range.numMipLevels);
+
+  // @fb-only
+  if (is420) {
+    // this is a prototype support implemented for a couple of multiplanar image formats
+    IGL_DEBUG_ASSERT(range.face == 0 && range.layer == 0 && range.mipLevel == 0);
+    IGL_DEBUG_ASSERT(range.numFaces == 1 && range.numLayers == 1 && range.numMipLevels == 1);
+    IGL_DEBUG_ASSERT(range.x == 0 && range.y == 0 && range.z == 0);
+    IGL_DEBUG_ASSERT(image.type_ == VK_IMAGE_TYPE_2D);
+    IGL_DEBUG_ASSERT(image.extent_.width == range.width && image.extent_.height == range.height);
+    const uint32_t w = image.extent_.width;
+    const uint32_t h = image.extent_.height;
+    ivkCmdBeginDebugUtilsLabel(&ctx_.vf_,
+                               wrapper.cmdBuf_,
+                               "VulkanStagingDevice::imageData (upload YUV image data)",
+                               kColorUploadImage.toFloatPtr());
+    VkImageAspectFlags imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT;
+
+    // Luminance (1 plane)
+    copyRegions.emplace_back(
+        ivkGetBufferImageCopy2D(memoryChunk.offset,
+                                0,
+                                ivkGetRect2D(0, 0, w, h),
+                                VkImageSubresourceLayers{VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1}));
+    // Chrominance (in 1 or 2 planes, 420 subsampled)
+    const VkDeviceSize planeSize0 = static_cast<VkDeviceSize>(w) * static_cast<VkDeviceSize>(h);
+    const VkDeviceSize planeSize1 = planeSize0 / 4; // subsampled
+    if (image.imageFormat_ == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+      imageAspect |= VK_IMAGE_ASPECT_PLANE_1_BIT;
+      copyRegions.emplace_back(
+          ivkGetBufferImageCopy2D(memoryChunk.offset + planeSize0,
+                                  0,
+                                  ivkGetRect2D(0, 0, w / 2, h / 2),
+                                  VkImageSubresourceLayers{VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1}));
+    } else if (image.imageFormat_ == VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) {
+      imageAspect |= VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT;
+      copyRegions.emplace_back(
+          ivkGetBufferImageCopy2D(memoryChunk.offset + planeSize0,
+                                  0,
+                                  ivkGetRect2D(0, 0, w / 2, h / 2),
+                                  VkImageSubresourceLayers{VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1}));
+      copyRegions.emplace_back(
+          ivkGetBufferImageCopy2D(memoryChunk.offset + planeSize0 + planeSize1,
+                                  0,
+                                  ivkGetRect2D(0, 0, w / 2, h / 2),
+                                  VkImageSubresourceLayers{VK_IMAGE_ASPECT_PLANE_2_BIT, 0, 0, 1}));
+
+    } else {
+      IGL_DEBUG_ABORT("Unimplemented multiplanar image format");
+      return;
+    }
+
+    const VkImageSubresourceRange subresourceRange = {
+        imageAspect, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+    // 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
+    ivkImageMemoryBarrier(&ctx_.vf_,
+                          wrapper.cmdBuf_,
+                          image.getVkImage(),
+                          0,
+                          VK_ACCESS_TRANSFER_WRITE_BIT,
+                          VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          subresourceRange);
+
+    // 2. Copy the pixel data from the staging buffer into the image
+#if IGL_VULKAN_PRINT_COMMANDS
+    IGL_LOG_INFO("%p vkCmdCopyBufferToImage()\n", wrapper.cmdBuf_);
+#endif // IGL_VULKAN_PRINT_COMMANDS
+    ctx_.vf_.vkCmdCopyBufferToImage(wrapper.cmdBuf_,
+                                    stagingBuffer->getVkBuffer(),
+                                    image.getVkImage(),
+                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                    static_cast<uint32_t>(copyRegions.size()),
+                                    copyRegions.data());
+
+    const VkImageLayout targetLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    // 3. Transition TRANSFER_DST_OPTIMAL into `targetLayout`
+    ivkImageMemoryBarrier(&ctx_.vf_,
+                          wrapper.cmdBuf_,
+                          image.getVkImage(),
+                          VK_ACCESS_TRANSFER_WRITE_BIT,
+                          VK_ACCESS_SHADER_READ_BIT,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          targetLayout,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                          subresourceRange);
+
+    image.imageLayout_ = targetLayout;
+
+    ivkCmdEndDebugUtilsLabel(&ctx_.vf_, wrapper.cmdBuf_);
+
+    // Store the allocated block with the SubmitHandle at the end of the deque
+    memoryChunk.handle = immediate_->submit(wrapper);
+    regions_.push_back(memoryChunk);
+
+    return;
+
+    // end of VK_FORMAT_G8_B8R8_2PLANE_420_UNORM code path
+  }
 
   // vkCmdCopyBufferToImage() can have only one single bit set for image aspect flags (IGL has no
   // way to distinguish between Depth and Stencil for combined depth/stencil image formats)
@@ -278,6 +430,11 @@ void VulkanStagingDevice::imageData(VulkanImage& image,
       image.isDepthFormat_
           ? VK_IMAGE_ASPECT_DEPTH_BIT
           : (image.isStencilFormat_ ? VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT);
+
+  ivkCmdBeginDebugUtilsLabel(&ctx_.vf_,
+                             wrapper.cmdBuf_,
+                             "VulkanStagingDevice::imageData (upload image data)",
+                             kColorUploadImage.toFloatPtr());
 
   for (auto mipLevel = range.mipLevel; mipLevel < range.mipLevel + range.numMipLevels; ++mipLevel) {
     const auto mipRange = range.atMipLevel(mipLevel);
@@ -314,8 +471,8 @@ void VulkanStagingDevice::imageData(VulkanImage& image,
   // image memory barriers should have combined image aspect flags (depth/stencil)
   const VkImageSubresourceRange subresourceRange = {
       image.getImageAspectFlags(),
-      static_cast<uint32_t>(range.mipLevel),
-      static_cast<uint32_t>(range.numMipLevels),
+      static_cast<uint32_t>(0u),
+      static_cast<uint32_t>(VK_REMAINING_MIP_LEVELS),
       initialLayer,
       numLayers,
   };
@@ -336,7 +493,7 @@ void VulkanStagingDevice::imageData(VulkanImage& image,
   IGL_LOG_INFO("%p vkCmdCopyBufferToImage()\n", wrapper.cmdBuf_);
 #endif // IGL_VULKAN_PRINT_COMMANDS
   ctx_.vf_.vkCmdCopyBufferToImage(wrapper.cmdBuf_,
-                                  stagingBuffer_->getVkBuffer(),
+                                  stagingBuffer->getVkBuffer(),
                                   image.getVkImage(),
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   static_cast<uint32_t>(copyRegions.size()),
@@ -359,7 +516,7 @@ void VulkanStagingDevice::imageData(VulkanImage& image,
                                            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
                                            : VK_IMAGE_LAYOUT_UNDEFINED)));
 
-  IGL_ASSERT_MSG(targetLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Missing usage flags");
+  IGL_DEBUG_ASSERT(targetLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Missing usage flags");
 
   const VkAccessFlags dstAccessMask =
       isSampled
@@ -384,9 +541,11 @@ void VulkanStagingDevice::imageData(VulkanImage& image,
 
   image.imageLayout_ = targetLayout;
 
+  ivkCmdEndDebugUtilsLabel(&ctx_.vf_, wrapper.cmdBuf_);
+
   // Store the allocated block with the SubmitHandle at the end of the deque
   memoryChunk.handle = immediate_->submit(wrapper);
-  regions_.push_front(memoryChunk);
+  regions_.push_back(memoryChunk);
 }
 
 void VulkanStagingDevice::getImageData2D(VkImage srcImage,
@@ -394,15 +553,15 @@ void VulkanStagingDevice::getImageData2D(VkImage srcImage,
                                          const uint32_t layer,
                                          const VkRect2D& imageRegion,
                                          TextureFormatProperties properties,
-                                         VkFormat format,
+                                         VkFormat /*format*/,
                                          VkImageLayout layout,
                                          void* data,
                                          uint32_t bytesPerRow,
                                          bool flipImageVertical) {
   IGL_PROFILER_FUNCTION();
-  IGL_ASSERT(layout != VK_IMAGE_LAYOUT_UNDEFINED);
+  IGL_DEBUG_ASSERT(layout != VK_IMAGE_LAYOUT_UNDEFINED);
 
-  bool mustRepack = bytesPerRow != 0 && bytesPerRow % properties.bytesPerBlock != 0;
+  const bool mustRepack = bytesPerRow != 0 && bytesPerRow % properties.bytesPerBlock != 0;
 
   const auto range =
       TextureRangeDesc::new2D(0, 0, imageRegion.extent.width, imageRegion.extent.height);
@@ -411,27 +570,18 @@ void VulkanStagingDevice::getImageData2D(VkImage srcImage,
 
   // We don't support uploading image data in small chunks. If the total upload size exceeds the
   // the maximum allowed staging buffer size, we can't upload it
-  IGL_ASSERT_MSG(storageSize <= maxStagingBufferSize_,
-                 "Image size exceeds maximum size of staging buffer");
+  IGL_DEBUG_ASSERT(storageSize <= maxStagingBufferSize_,
+                   "Image size exceeds maximum size of staging buffer");
 
 #if IGL_VULKAN_DEBUG_STAGING_DEVICE
   IGL_LOG_INFO("Image download requested for data with %u bytes\n", storageSize);
 #endif
 
   // get next staging buffer free offset
-  MemoryRegion memoryChunk = nextFreeBlock(storageSize);
+  const MemoryRegion memoryChunk = nextFreeBlock(storageSize, true);
 
-  IGL_ASSERT(storageSize <= stagingBufferSize_);
-
-  // If we get smaller buffer size than storageSize, we will wait for gpu idle
-  // and get bigger chunk.
-  if (memoryChunk.size < storageSize) {
-    waitAndReset();
-    memoryChunk = nextFreeBlock(storageSize);
-  }
-
-  IGL_ASSERT(memoryChunk.size >= storageSize);
-  auto& wrapper1 = immediate_->acquire();
+  IGL_DEBUG_ASSERT(memoryChunk.size >= storageSize);
+  const auto& wrapper1 = immediate_->acquire();
 
   // 1. Transition to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
   ivkImageMemoryBarrier(&ctx_.vf_,
@@ -445,6 +595,8 @@ void VulkanStagingDevice::getImageData2D(VkImage srcImage,
                         VK_PIPELINE_STAGE_TRANSFER_BIT, // dstStageMask
                         VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, level, 1, layer, 1});
 
+  auto& stagingBuffer = stagingBuffers_[memoryChunk.stagingBufferIndex];
+
   // 2.  Copy the pixel data from the image into the staging buffer
   const VkBufferImageCopy copy = ivkGetBufferImageCopy2D(
       memoryChunk.offset,
@@ -455,19 +607,19 @@ void VulkanStagingDevice::getImageData2D(VkImage srcImage,
   ctx_.vf_.vkCmdCopyImageToBuffer(wrapper1.cmdBuf_,
                                   srcImage,
                                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                  stagingBuffer_->getVkBuffer(),
+                                  stagingBuffer->getVkBuffer(),
                                   1,
                                   &copy);
 
   // Wait for command to finish
-  immediate_->wait(immediate_->submit(wrapper1));
+  immediate_->wait(immediate_->submit(wrapper1), ctx_.config_.fenceTimeoutNanoseconds);
 
   // 3. Copy data from staging buffer into data
-  if (!IGL_VERIFY(stagingBuffer_->getMappedPtr())) {
+  if (!IGL_DEBUG_VERIFY(stagingBuffer->getMappedPtr())) {
     return;
   }
 
-  const uint8_t* src = stagingBuffer_->getMappedPtr() + memoryChunk.offset;
+  const uint8_t* src = stagingBuffer->getMappedPtr() + memoryChunk.offset;
   uint8_t* dst = static_cast<uint8_t*>(data);
 
   // Vulkan only handles cases where row lengths are multiples of texel block size.
@@ -477,14 +629,14 @@ void VulkanStagingDevice::getImageData2D(VkImage srcImage,
     ITexture::repackData(properties, range, src, 0, dst, bytesPerRow, flipImageVertical);
   } else {
     if (flipImageVertical) {
-      ITexture::repackData(properties, range, src, 0, dst, 0, true);
+      ITexture::repackData(properties, range, src, bytesPerRow, dst, bytesPerRow, true);
     } else {
       checked_memcpy(dst, storageSize, src, storageSize);
     }
   }
 
   // 4. Transition back to the initial image layout
-  auto& wrapper2 = immediate_->acquire();
+  const auto& wrapper2 = immediate_->acquire();
 
   ivkImageMemoryBarrier(&ctx_.vf_,
                         wrapper2.cmdBuf_,
@@ -498,8 +650,10 @@ void VulkanStagingDevice::getImageData2D(VkImage srcImage,
                         VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, level, 1, layer, 1});
 
   // the data should be available as we get out of this function
-  immediate_->wait(immediate_->submit(wrapper2));
-  regions_.push_front(memoryChunk);
+  immediate_->wait(immediate_->submit(wrapper2), ctx_.config_.fenceTimeoutNanoseconds);
+
+  regions_.push_back(memoryChunk);
+  freeStagingBufferSize_ += memoryChunk.size;
 }
 
 VkDeviceSize VulkanStagingDevice::getAlignedSize(VkDeviceSize size) const {
@@ -511,65 +665,80 @@ void VulkanStagingDevice::waitAndReset() {
   IGL_PROFILER_FUNCTION();
 
   for (const auto region : regions_) {
-    immediate_->wait(region.handle);
+    immediate_->wait(region.handle, ctx_.config_.fenceTimeoutNanoseconds);
   }
 
   regions_.clear();
-
-  regions_.push_front(
-      {0, stagingBufferSize_, stagingBufferSize_, VulkanImmediateCommands::SubmitHandle()});
+  stagingBuffers_.clear();
+  freeStagingBufferSize_ = 0;
 }
 
-bool VulkanStagingDevice::shouldGrowStagingBuffer(VkDeviceSize sizeNeeded) const {
-  return !stagingBuffer_ || (sizeNeeded > stagingBufferSize_);
+bool VulkanStagingDevice::shouldAllocateStagingBuffer(VkDeviceSize sizeNeeded,
+                                                      bool contiguous) const noexcept {
+  if (regions_.empty()) {
+    return true;
+  }
+
+  // if contiguous memory is not requested
+  if (!contiguous) {
+    // return true if there is no free space
+    return freeStagingBufferSize_ == 0;
+  }
+
+  // if contiguous memory is requested and we have enough free space
+  if (sizeNeeded <= freeStagingBufferSize_) {
+    // loop over empty regions to find a block that is large enough
+    auto regionItr = regions_.begin();
+    while (regionItr != regions_.end()) {
+      if (regionItr->size >= sizeNeeded && regionItr->handle.empty()) {
+        return false;
+      }
+      regionItr++;
+    }
+  }
+
+  // return true if no single block can hold the requested size
+  return true;
 }
 
 VkDeviceSize VulkanStagingDevice::nextSize(VkDeviceSize requestedSize) const {
-  return std::min(getAlignedSize(requestedSize), maxStagingBufferSize_);
+  return std::min(std::max(getAlignedSize(requestedSize), kMinStagingBufferSize),
+                  maxStagingBufferSize_);
 }
 
-void VulkanStagingDevice::growStagingBuffer(VkDeviceSize minimumSize) {
+void VulkanStagingDevice::allocateStagingBuffer(VkDeviceSize minimumSize) {
   IGL_PROFILER_FUNCTION();
 
-  IGL_ASSERT(minimumSize <= maxStagingBufferSize_);
+  IGL_DEBUG_ASSERT(minimumSize <= maxStagingBufferSize_);
 
 #if IGL_VULKAN_DEBUG_STAGING_DEVICE
-  IGL_LOG_INFO("Growing staging buffer from %u to %u bytes\n", stagingBufferSize_, minimumSize);
+  IGL_LOG_INFO("Allocating a new staging buffer of size %u bytes\n", minimumSize);
 #endif
 
-  waitAndReset();
-
-  // De-allocates the staging buffer
-  stagingBuffer_ = nullptr;
-
-  // If the size of the new staging buffer plus the size of the existing one is larger than the
-  // limit imposed by some architectures on buffers that are device and host visible, we need to
-  // wait for the current buffer to be destroyed before we can allocate a new one
-  if ((minimumSize + stagingBufferSize_) > maxStagingBufferSize_) {
-    // Wait for the current buffer to be destroyed on the device
-    ctx_.waitDeferredTasks();
-  }
-
-  stagingBufferSize_ = minimumSize;
+  const auto stagingBufferSize = minimumSize;
 
   // Increment the id used for naming the staging buffer
   ++stagingBufferCounter_;
 
   // Create a new staging buffer with the new size
-  stagingBuffer_ = ctx_.createBuffer(
-      stagingBufferSize_,
+  stagingBuffers_.emplace_back(std::make_unique<VulkanBuffer>(
+      ctx_,
+      ctx_.device_->getVkDevice(),
+      stagingBufferSize,
       VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-      nullptr,
-      IGL_FORMAT("Buffer: staging buffer #{} with {}B", stagingBufferCounter_, stagingBufferSize_)
-          .c_str());
-  IGL_ASSERT(stagingBuffer_.get());
+      IGL_FORMAT("Buffer: staging buffer #{} with {}B", stagingBufferCounter_, stagingBufferSize)
+          .c_str()));
+  IGL_DEBUG_ASSERT(stagingBuffers_.back().get());
 
-  // Clear out the old regions and add one that represents the entire buffer
-  regions_.clear();
-  regions_.push_front(
-      {0, stagingBufferSize_, stagingBufferSize_, VulkanImmediateCommands::SubmitHandle()});
+  // Add region that represents the entire buffer
+  regions_.push_front({0,
+                       stagingBufferSize,
+                       stagingBufferSize,
+                       VulkanImmediateCommands::SubmitHandle(),
+                       static_cast<uint32_t>(stagingBuffers_.size()) - 1});
+
+  freeStagingBufferSize_ += stagingBufferSize;
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

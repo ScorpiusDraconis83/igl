@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #include <IGLU/sentinel/Framebuffer.h>
 
 #include <IGLU/sentinel/Assert.h>
@@ -87,6 +89,10 @@ void Framebuffer::updateDrawable(std::shared_ptr<igl::ITexture> /*texture*/) {
 }
 
 void Framebuffer::updateDrawable(igl::SurfaceTextures /*surfaceTextures*/) {
+  IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
+}
+
+void Framebuffer::updateResolveAttachment(std::shared_ptr<igl::ITexture> /*texture*/) {
   IGLU_SENTINEL_ASSERT_IF_NOT(shouldAssert_);
 }
 

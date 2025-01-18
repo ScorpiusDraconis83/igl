@@ -12,8 +12,10 @@
 #include <igl/Common.h>
 #include <iterator>
 #include <string>
-
-#if IGL_PLATFORM_WIN
+// @fb-only
+// @fb-only
+// @fb-only
+#if IGL_PLATFORM_WINDOWS
 #include <windows.h>
 #endif
 
@@ -39,7 +41,7 @@ std::string findSubdir(const char* subdir, const std::string& fileName) {
     return fullPath.string();
   }
 
-  return std::string();
+  return {};
 }
 
 } // namespace
@@ -47,9 +49,9 @@ std::string findSubdir(const char* subdir, const std::string& fileName) {
 namespace igl::shell {
 
 FileLoaderWin::FileLoaderWin() {
-#if IGL_PLATFORM_WIN
+#if IGL_PLATFORM_WINDOWS
   wchar_t path[MAX_PATH] = {0};
-  if (IGL_VERIFY(GetModuleFileNameW(NULL, path, MAX_PATH) != 0)) {
+  if (IGL_DEBUG_VERIFY(GetModuleFileNameW(NULL, path, MAX_PATH) != 0)) {
     basePath_ = std::filesystem::path(path).parent_path().string();
   }
 #endif
@@ -94,6 +96,12 @@ std::string FileLoaderWin::fullPath(const std::string& fileName) const {
       "samples/resources/fonts/",
       "samples/resources/fonts/optimistic",
       // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
+      // @fb-only
   };
 
   // find folders somewhere above our current directory
@@ -103,8 +111,26 @@ std::string FileLoaderWin::fullPath(const std::string& fileName) const {
     }
   }
 
-  IGL_ASSERT_NOT_REACHED();
-  return "";
+#if !defined(IGL_CMAKE_BUILD)
+  // @lint-ignore CLANGTIDY
+  const std::string resfolders[] = {
+      // @fb-only
+      // @fb-only
+      // @fb-only
+  };
+  // @fb-only
+    // @fb-only
+    // @fb-only
+      // @fb-only
+          // @fb-only
+      // @fb-only
+        // @fb-only
+      // @fb-only
+    // @fb-only
+  // @fb-only
+#endif
+
+  return fileName;
 }
 
 } // namespace igl::shell

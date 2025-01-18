@@ -10,24 +10,25 @@
 #include <Metal/Metal.h>
 #include <igl/CommandBuffer.h>
 
-namespace igl {
-namespace metal {
+namespace igl::metal {
+
+class Device;
 
 class CommandBuffer final : public ICommandBuffer,
                             public std::enable_shared_from_this<CommandBuffer> {
  public:
-  explicit CommandBuffer(id<MTLCommandBuffer> value);
+  CommandBuffer(igl::metal::Device& device, id<MTLCommandBuffer> value);
   ~CommandBuffer() override = default;
 
   std::unique_ptr<IComputeCommandEncoder> createComputeCommandEncoder() override;
 
   std::unique_ptr<IRenderCommandEncoder> createRenderCommandEncoder(
       const RenderPassDesc& renderPass,
-      std::shared_ptr<IFramebuffer> framebuffer,
+      const std::shared_ptr<IFramebuffer>& framebuffer,
       const Dependencies& dependencies,
       Result* outResult) override;
 
-  void present(std::shared_ptr<ITexture> surface) const override;
+  void present(const std::shared_ptr<ITexture>& surface) const override;
 
   void pushDebugGroupLabel(const char* label, const igl::Color& color) const override;
 
@@ -41,9 +42,13 @@ class CommandBuffer final : public ICommandBuffer,
     return value_;
   }
 
+  igl::metal::Device& device() {
+    return device_;
+  }
+
  private:
+  igl::metal::Device& device_;
   id<MTLCommandBuffer> value_;
 };
 
-} // namespace metal
-} // namespace igl
+} // namespace igl::metal

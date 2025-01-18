@@ -17,8 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace iglu {
-namespace material {
+namespace iglu::material {
 
 /// Handles allocation, updating and binding of shader uniforms. It uses reflection
 /// information to generate the underlying data and provides a simple API to manipulate it.
@@ -57,7 +56,7 @@ class ShaderUniforms final {
   void setFloatArray(const igl::NameHandle& blockTypeName,
                      const igl::NameHandle& blockInstanceName,
                      const igl::NameHandle& memberName,
-                     iglu::simdtypes::float1* value,
+                     const iglu::simdtypes::float1* value,
                      size_t count = 1,
                      size_t arrayIndex = 0);
 
@@ -129,7 +128,18 @@ class ShaderUniforms final {
   void setFloat3x3(const igl::NameHandle& uniformName,
                    const iglu::simdtypes::float3x3& value,
                    size_t arrayIndex = 0);
+  void setFloat3x3(const igl::NameHandle& blockTypeName,
+                   const igl::NameHandle& blockInstanceName,
+                   const igl::NameHandle& uniformName,
+                   const iglu::simdtypes::float3x3& value,
+                   size_t arrayIndex = 0);
   void setFloat3x3Array(const igl::NameHandle& uniformName,
+                        const iglu::simdtypes::float3x3* value,
+                        size_t count = 1,
+                        size_t arrayIndex = 0);
+  void setFloat3x3Array(const igl::NameHandle& blockTypeName,
+                        const igl::NameHandle& blockInstanceName,
+                        const igl::NameHandle& memberName,
                         const iglu::simdtypes::float3x3* value,
                         size_t count = 1,
                         size_t arrayIndex = 0);
@@ -172,6 +182,15 @@ class ShaderUniforms final {
                    size_t count = 1,
                    size_t arrayIndex = 0);
 
+  void setInt2(const igl::NameHandle& uniformName,
+               const iglu::simdtypes::int2& value,
+               size_t arrayIndex = 0);
+  void setInt2(const igl::NameHandle& blockTypeName,
+               const igl::NameHandle& blockInstanceName,
+               const igl::NameHandle& memberName,
+               const iglu::simdtypes::int2& value,
+               size_t arrayIndex = 0);
+
   void setTexture(const std::string& name,
                   const std::shared_ptr<igl::ITexture>& value,
                   const std::shared_ptr<igl::ISamplerState>& sampler,
@@ -192,6 +211,13 @@ class ShaderUniforms final {
             const igl::IRenderPipelineState& pipelineState,
             igl::IRenderCommandEncoder& encoder,
             const igl::NameHandle& uniformName);
+
+  void bind(igl::IDevice& device,
+            const igl::IRenderPipelineState& pipelineState,
+            igl::IRenderCommandEncoder& encoder,
+            const igl::NameHandle& blockName,
+            const igl::NameHandle& blockInstanceName,
+            const igl::NameHandle& memberName);
 
   /**
    * Uniform/Storage buffers can be suballocated, for scenarios where
@@ -215,11 +241,24 @@ class ShaderUniforms final {
                        const igl::NameHandle& blockInstanceName,
                        const igl::NameHandle& memberName);
 
-  static igl::NameHandle getQualifiedMemberName(const igl::NameHandle& blockTypeName,
-                                                const igl::NameHandle& blockInstanceName,
-                                                const igl::NameHandle& memberName);
+  class MemoizedQualifiedMemberNameCalculator {
+   public:
+    igl::NameHandle getQualifiedMemberName(const igl::NameHandle& blockTypeName,
+                                           const igl::NameHandle& blockInstanceName,
+                                           const igl::NameHandle& memberName) const;
 
-  ShaderUniforms(igl::IDevice& device, const igl::IRenderPipelineReflection& reflection);
+   private:
+    mutable std::unordered_map<std::pair<igl::NameHandle, igl::NameHandle>, igl::NameHandle>
+        qualifiedMemberNameCache_;
+  };
+
+  igl::NameHandle getQualifiedMemberName(const igl::NameHandle& blockTypeName,
+                                         const igl::NameHandle& blockInstanceName,
+                                         const igl::NameHandle& memberName);
+
+  ShaderUniforms(igl::IDevice& device,
+                 const igl::IRenderPipelineReflection& reflection,
+                 bool enableSuballocationforVulkan = true);
   ~ShaderUniforms();
 
  private:
@@ -259,6 +298,8 @@ class ShaderUniforms final {
 
   std::unordered_multimap<igl::NameHandle, UniformDesc> _allUniformsByName;
 
+  MemoizedQualifiedMemberNameCalculator memoizedQualifiedMemberNameCalculator_;
+
   struct TextureSlot {
     std::shared_ptr<igl::ITexture> texture;
     igl::ITexture* rawTexture = nullptr;
@@ -273,13 +314,10 @@ class ShaderUniforms final {
   std::unordered_map<std::string, TextureSlot> _allTexturesByName;
   std::unordered_map<std::string, SamplerSlot> _allSamplersByName;
 
-  igl::NameHandle getBufferName(const igl::NameHandle& blockTypeName,
-                                const igl::NameHandle& blockInstanceName,
-                                const igl::NameHandle& memberName);
-
-  igl::NameHandle getBufferMemberName(const igl::NameHandle& blockTypeName,
-                                      const igl::NameHandle& blockInstanceName,
-                                      const igl::NameHandle& memberName);
+  std::vector<std::pair<igl::NameHandle, igl::NameHandle>> getPossibleBufferAndMemberNames(
+      const igl::NameHandle& blockTypeName,
+      const igl::NameHandle& blockInstanceName,
+      const igl::NameHandle& memberName);
 
   void setUniformBytes(const UniformDesc& uniformDesc,
                        const void* data,
@@ -312,5 +350,4 @@ class ShaderUniforms final {
                   BufferDesc* buffer);
 };
 
-} // namespace material
-} // namespace iglu
+} // namespace iglu::material

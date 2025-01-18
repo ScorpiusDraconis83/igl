@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @fb-only
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #ifdef _WIN32
@@ -21,9 +23,8 @@
 
 #include <GLFW/glfw3native.h>
 
-#include <cassert>
+#include <cstdio>
 #include <regex>
-#include <stdio.h>
 
 #include <igl/IGL.h>
 
@@ -37,7 +38,7 @@
 
 // clang-format off
 #if USE_OPENGL_BACKEND
-  #if IGL_PLATFORM_WIN
+  #if IGL_PLATFORM_WINDOWS
     #include <igl/opengl/wgl/Context.h>
     #include <igl/opengl/wgl/Device.h>
     #include <igl/opengl/wgl/HWDevice.h>
@@ -193,7 +194,7 @@ static void initIGL() {
   // create a device
   {
 #if USE_OPENGL_BACKEND
-#if IGL_PLATFORM_WIN
+#if IGL_PLATFORM_WINDOWS
     auto ctx = std::make_unique<igl::opengl::wgl::Context>(GetDC(glfwGetWin32Window(window_)),
                                                            glfwGetWGLContext(window_));
     device_ = std::make_unique<igl::opengl::wgl::Device>(std::move(ctx));
@@ -209,7 +210,6 @@ static void initIGL() {
 #else
     const igl::vulkan::VulkanContextConfig cfg{
         .terminateOnValidationError = true,
-        .swapChainColorSpace = igl::ColorSpace::SRGB_LINEAR,
     };
 #ifdef _WIN32
     auto ctx = vulkan::HWDevice::createContext(cfg, (void*)glfwGetWin32Window(window_));
@@ -222,20 +222,20 @@ static void initIGL() {
 #error Unsupported OS
 #endif
 
-    std::vector<HWDeviceDesc> devices = vulkan::HWDevice::queryDevices(
-        *ctx.get(), HWDeviceQueryDesc(HWDeviceType::DiscreteGpu), nullptr);
+    std::vector<HWDeviceDesc> devices =
+        vulkan::HWDevice::queryDevices(*ctx, HWDeviceQueryDesc(HWDeviceType::DiscreteGpu), nullptr);
     if (devices.empty()) {
       devices = vulkan::HWDevice::queryDevices(
-          *ctx.get(), HWDeviceQueryDesc(HWDeviceType::IntegratedGpu), nullptr);
+          *ctx, HWDeviceQueryDesc(HWDeviceType::IntegratedGpu), nullptr);
     }
     device_ =
         vulkan::HWDevice::create(std::move(ctx), devices[0], (uint32_t)width_, (uint32_t)height_);
 #endif
-    IGL_ASSERT(device_);
+    IGL_DEBUG_ASSERT(device_);
   }
 
   // Command queue: backed by different types of GPU HW queues
-  CommandQueueDesc desc{CommandQueueType::Graphics};
+  const CommandQueueDesc desc{};
   commandQueue_ = device_->createCommandQueue(desc, nullptr);
 
   // first color attachment
@@ -257,7 +257,7 @@ static void createRenderPipeline() {
     return;
   }
 
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 
   RenderPipelineDesc desc;
 
@@ -282,28 +282,28 @@ static void createRenderPipeline() {
   desc.shaderStages = ShaderStagesCreator::fromModuleStringInput(
       *device_, codeVS.c_str(), "main", "", codeFS, "main", "", nullptr);
   renderPipelineState_Triangle_ = device_->createRenderPipeline(desc, nullptr);
-  IGL_ASSERT(renderPipelineState_Triangle_);
+  IGL_DEBUG_ASSERT(renderPipelineState_Triangle_);
 }
 
 static std::shared_ptr<ITexture> getNativeDrawable() {
   Result ret;
   std::shared_ptr<ITexture> drawable;
 #if USE_OPENGL_BACKEND
-#if IGL_PLATFORM_WIN
+#if IGL_PLATFORM_WINDOWS
   const auto& platformDevice = device_->getPlatformDevice<opengl::wgl::PlatformDevice>();
-  IGL_ASSERT(platformDevice != nullptr);
+  IGL_DEBUG_ASSERT(platformDevice != nullptr);
   drawable = platformDevice->createTextureFromNativeDrawable(&ret);
 #elif IGL_PLATFORM_LINUX
   const auto& platformDevice = device_->getPlatformDevice<opengl::glx::PlatformDevice>();
-  IGL_ASSERT(platformDevice != nullptr);
+  IGL_DEBUG_ASSERT(platformDevice != nullptr);
   drawable = platformDevice->createTextureFromNativeDrawable(width_, height_, &ret);
 #endif
 #else
   const auto& platformDevice = device_->getPlatformDevice<igl::vulkan::PlatformDevice>();
-  IGL_ASSERT(platformDevice != nullptr);
+  IGL_DEBUG_ASSERT(platformDevice != nullptr);
   drawable = platformDevice->createTextureFromNativeDrawable(&ret);
 #endif
-  IGL_ASSERT_MSG(ret.isOk(), ret.message.c_str());
+  IGL_DEBUG_ASSERT(ret.isOk(), ret.message.c_str());
   return drawable;
 }
 
@@ -326,7 +326,7 @@ static void createFramebuffer(const std::shared_ptr<ITexture>& nativeDrawable) {
     framebufferDesc.colorAttachments[i].texture = device_->createTexture(desc, nullptr);
   }
   framebuffer_ = device_->createFramebuffer(framebufferDesc, nullptr);
-  IGL_ASSERT(framebuffer_);
+  IGL_DEBUG_ASSERT(framebuffer_);
 }
 
 static void render(const std::shared_ptr<ITexture>& nativeDrawable) {
@@ -342,8 +342,9 @@ static void render(const std::shared_ptr<ITexture>& nativeDrawable) {
   }
 
   // Command buffers (1-N per thread): create, submit and forget
-  CommandBufferDesc cbDesc;
-  std::shared_ptr<ICommandBuffer> buffer = commandQueue_->createCommandBuffer(cbDesc, nullptr);
+  const CommandBufferDesc cbDesc;
+  const std::shared_ptr<ICommandBuffer> buffer =
+      commandQueue_->createCommandBuffer(cbDesc, nullptr);
 
   const igl::Viewport viewport = {0.0f, 0.0f, (float)width_, (float)height_, 0.0f, +1.0f};
   const igl::ScissorRect scissor = {0, 0, (uint32_t)width_, (uint32_t)height_};
@@ -355,7 +356,7 @@ static void render(const std::shared_ptr<ITexture>& nativeDrawable) {
   commands->bindViewport(viewport);
   commands->bindScissorRect(scissor);
   commands->pushDebugGroupLabel("Render Triangle", igl::Color(1, 0, 0));
-  commands->draw(PrimitiveType::Triangle, 0, 3);
+  commands->draw(3);
   commands->popDebugGroupLabel();
   commands->endEncoding();
 
@@ -364,7 +365,7 @@ static void render(const std::shared_ptr<ITexture>& nativeDrawable) {
   commandQueue_->submit(*buffer);
 }
 
-int main(int argc, char* argv[]) {
+int main(int /*argc*/, char* /*argv*/[]) {
   renderPass_.colorAttachments.resize(kNumColorAttachments);
   initWindow(&window_);
   initIGL();

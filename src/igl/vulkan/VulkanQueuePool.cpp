@@ -7,7 +7,6 @@
 
 #include "VulkanQueuePool.h"
 
-#include <igl/Log.h>
 #include <map>
 
 namespace igl::vulkan {
@@ -77,7 +76,7 @@ VulkanQueueDescriptor VulkanQueuePool::findQueueDescriptor(VkQueueFlags flags) c
   // Compute and graphics queues support transfer operations, and it is optional to report
   // VK_QUEUE_TRANSFER_BIT on those. So let's check them if no result is found
   if (flags & VK_QUEUE_TRANSFER_BIT) {
-    VkQueueFlags clearFlags = flags & ~VK_QUEUE_TRANSFER_BIT;
+    const VkQueueFlags clearFlags = flags & ~VK_QUEUE_TRANSFER_BIT;
     queueDescriptor = findDedicatedQueue(clearFlags | VK_QUEUE_COMPUTE_BIT, 0);
     if (queueDescriptor.isValid()) {
       return queueDescriptor;

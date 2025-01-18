@@ -10,6 +10,7 @@
 #include "data/VertexIndexData.h"
 #include "util/Common.h"
 #include "util/TestDevice.h"
+#include "util/TextureValidationHelpers.h"
 
 #include <IGLU/managedUniformBuffer/ManagedUniformBuffer.h>
 #include <array>
@@ -48,16 +49,20 @@ class TextureCubeTest : public ::testing::Test {
                                                                         igl::Result* /*result*/) {
     std::shared_ptr<iglu::ManagedUniformBuffer> vertUniformBuffer = nullptr;
 
-    iglu::ManagedUniformBufferInfo info = {
+    const iglu::ManagedUniformBufferInfo info = {
         .index = 1,
         .length = sizeof(VertexUniforms),
-        .uniforms = {{.name = "view",
-                      .type = igl::UniformType::Float4,
-                      .offset = offsetof(VertexUniforms, viewDirection)}}};
+        .uniforms = {
+            igl::UniformDesc{
+                .name = "view",
+                .type = igl::UniformType::Float4,
+                .offset = offsetof(VertexUniforms, viewDirection),
+            },
+        }};
 
     vertUniformBuffer = std::make_shared<iglu::ManagedUniformBuffer>(device, info);
 
-    IGL_ASSERT(vertUniformBuffer->result.isOk());
+    IGL_DEBUG_ASSERT(vertUniformBuffer->result.isOk());
 
     return vertUniformBuffer;
   }
@@ -80,12 +85,12 @@ class TextureCubeTest : public ::testing::Test {
     ASSERT_TRUE(iglDev_ != nullptr);
     ASSERT_TRUE(cmdQueue_ != nullptr);
 
-    TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                             kOffscreenTexWidth,
-                                             kOffscreenTexHeight,
-                                             TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
-
+    const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                   kOffscreenTexWidth,
+                                                   kOffscreenTexHeight,
+                                                   TextureDesc::TextureUsageBits::Sampled |
+                                                       TextureDesc::TextureUsageBits::Attachment,
+                                                   "TextureCubeTest::SetUp::offscreenTexture");
     Result ret;
     offscreenTexture_ = iglDev_->createTexture(texDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
@@ -187,7 +192,7 @@ class TextureCubeTest : public ::testing::Test {
     ASSERT_TRUE(uv_ != nullptr);
 
     // Initialize sampler state
-    SamplerStateDesc samplerDesc;
+    const SamplerStateDesc samplerDesc;
     samp_ = iglDev_->createSamplerState(samplerDesc, &ret);
     ASSERT_EQ(ret.code, Result::Code::Ok);
     ASSERT_TRUE(samp_ != nullptr);
@@ -298,9 +303,10 @@ void runUploadTest(IDevice& device, ICommandQueue& cmdQueue, bool singleUpload) 
   //--------------------
   const TextureDesc texDesc = TextureDesc::newCube(TextureFormat::RGBA_UNorm8,
                                                    kOffscreenTexWidth,
-                                                   kOffscreenTexWidth,
+                                                   kOffscreenTexHeight,
                                                    TextureDesc::TextureUsageBits::Sampled |
-                                                       TextureDesc::TextureUsageBits::Attachment);
+                                                       TextureDesc::TextureUsageBits::Attachment,
+                                                   "runUploadTest()::tex");
   auto tex = device.createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok) << ret.message;
   ASSERT_TRUE(tex != nullptr);
@@ -353,7 +359,8 @@ void runUploadToMipTest(IDevice& device, ICommandQueue& cmdQueue, bool singleUpl
                                              kOffscreenTexWidth,
                                              kOffscreenTexWidth,
                                              TextureDesc::TextureUsageBits::Sampled |
-                                                 TextureDesc::TextureUsageBits::Attachment);
+                                                 TextureDesc::TextureUsageBits::Attachment,
+                                             "runUploadToMipTest()::tex");
   texDesc.numMipLevels = 2;
   auto tex = device.createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok) << ret.message;
@@ -396,7 +403,7 @@ TEST_F(TextureCubeTest, UploadToMip_LevelByLevel) {
 // Texture Passthrough Test - Sample From Cube
 //
 // This test uses a simple shader to copy a face of the input cube texture to an
-// a output texture that matches the size of the input texture face
+// output texture that matches the size of the input texture face
 //
 TEST_F(TextureCubeTest, Passthrough_SampleFromCube) {
   Result ret;
@@ -405,10 +412,12 @@ TEST_F(TextureCubeTest, Passthrough_SampleFromCube) {
   //-------------------------------------
   // Create input texture and upload data
   //-------------------------------------
-  TextureDesc texDesc = TextureDesc::newCube(TextureFormat::RGBA_UNorm8,
-                                             kOffscreenTexWidth,
-                                             kOffscreenTexHeight,
-                                             TextureDesc::TextureUsageBits::Sampled);
+  const TextureDesc texDesc =
+      TextureDesc::newCube(TextureFormat::RGBA_UNorm8,
+                           kOffscreenTexWidth,
+                           kOffscreenTexHeight,
+                           TextureDesc::TextureUsageBits::Sampled,
+                           "TextureCubeTest::Passthrough_SampleFromCube::inputTexture_");
   inputTexture_ = iglDev_->createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(inputTexture_ != nullptr);
@@ -449,8 +458,8 @@ TEST_F(TextureCubeTest, Passthrough_SampleFromCube) {
     ASSERT_TRUE(cmdBuf_ != nullptr);
 
     auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-    cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
     cmds->bindRenderPipelineState(pipelineState);
 
@@ -458,15 +467,16 @@ TEST_F(TextureCubeTest, Passthrough_SampleFromCube) {
     cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
     Result result{};
-    auto vertUniformBuffer = createVertexUniformBuffer(*iglDev_.get(), &result);
+    auto vertUniformBuffer = createVertexUniformBuffer(*iglDev_, &result);
     ASSERT_TRUE(result.isOk());
 
     vertexUniforms_.viewDirection = kViewDirection[face];
 
     *static_cast<VertexUniforms*>(vertUniformBuffer->getData()) = vertexUniforms_;
-    vertUniformBuffer->bind(*iglDev_.get(), *pipelineState, *cmds.get());
+    vertUniformBuffer->bind(*iglDev_, *pipelineState, *cmds);
 
-    cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+    cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+    cmds->drawIndexed(6);
 
     cmds->endEncoding();
 
@@ -497,19 +507,22 @@ TEST_F(TextureCubeTest, Passthrough_RenderToCube) {
   //---------------------------------
   // Create input and output textures
   //---------------------------------
-  TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                           kOffscreenTexWidth,
-                                           kOffscreenTexHeight,
-                                           TextureDesc::TextureUsageBits::Sampled);
+  TextureDesc texDesc =
+      TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                         kOffscreenTexWidth,
+                         kOffscreenTexHeight,
+                         TextureDesc::TextureUsageBits::Sampled,
+                         "TextureCubeTest::Passthrough_RenderToCube::inputTexture_");
   inputTexture_ = iglDev_->createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(inputTexture_ != nullptr);
 
-  texDesc = TextureDesc::newCube(TextureFormat::RGBA_UNorm8,
-                                 kOffscreenTexWidth,
-                                 kOffscreenTexHeight,
-                                 TextureDesc::TextureUsageBits::Sampled |
-                                     TextureDesc::TextureUsageBits::Attachment);
+  texDesc = TextureDesc::newCube(
+      TextureFormat::RGBA_UNorm8,
+      kOffscreenTexWidth,
+      kOffscreenTexHeight,
+      TextureDesc::TextureUsageBits::Sampled | TextureDesc::TextureUsageBits::Attachment,
+      "TextureCubeTest::Passthrough_RenderToCube::customOffscreenTexture");
   auto customOffscreenTexture = iglDev_->createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(customOffscreenTexture != nullptr);
@@ -556,15 +569,16 @@ TEST_F(TextureCubeTest, Passthrough_RenderToCube) {
 
     renderPass_.colorAttachments[0].face = face;
     auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, customFramebuffer);
-    cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
     cmds->bindRenderPipelineState(pipelineState);
 
     cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
     cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-    cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+    cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+    cmds->drawIndexed(6);
 
     cmds->endEncoding();
 
@@ -599,7 +613,8 @@ TEST_F(TextureCubeTest, GetEstimatedSizeInBytes) {
                                                width,
                                                height,
                                                TextureDesc::TextureUsageBits::Sampled |
-                                                   TextureDesc::TextureUsageBits::Attachment);
+                                                   TextureDesc::TextureUsageBits::Attachment,
+                                               "TextureCubeTest::GetEstimatedSizeInBytes::texture");
     texDesc.numMipLevels = numMipLevels;
     auto texture = iglDev_->createTexture(texDesc, &ret);
     if (ret.code != Result::Code::Ok || texture == nullptr) {
@@ -633,7 +648,8 @@ TEST_F(TextureCubeTest, GetRange) {
                                                width,
                                                height,
                                                TextureDesc::TextureUsageBits::Sampled |
-                                                   TextureDesc::TextureUsageBits::Attachment);
+                                                   TextureDesc::TextureUsageBits::Attachment,
+                                               "TextureCubeTest::GetRange::texture");
     texDesc.numMipLevels = numMipLevels;
     auto texture = iglDev_->createTexture(texDesc, &ret);
     if (ret.code != Result::Code::Ok || texture == nullptr) {
@@ -686,7 +702,7 @@ TEST_F(TextureCubeTest, GetRange) {
                : TextureRangeDesc{};
   };
   auto rangesAreEqual = [&](const TextureRangeDesc& a, const TextureRangeDesc& b) -> bool {
-    return std::memcmp(&a, &b, sizeof(TextureRangeDesc)) == 0;
+    return memcmp(&a, &b, sizeof(TextureRangeDesc)) == 0;
   };
   const auto format = iglDev_->getBackendType() == BackendType::OpenGL
                           ? TextureFormat::R5G5B5A1_UNorm

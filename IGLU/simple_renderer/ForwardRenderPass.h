@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #pragma once
 
 #include <IGLU/simple_renderer/Drawable.h>
@@ -13,8 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace iglu {
-namespace renderpass {
+namespace iglu::renderpass {
 
 /// A simple "render pass" abstraction that hides low level graphics API details
 /// like command queue, command encoder, render pipeline state and presentation.
@@ -43,7 +44,8 @@ class ForwardRenderPass final {
 
   //// The render pass is considered active when in between begin() and end() calls.
   bool isActive() const;
-  std::shared_ptr<igl::IFramebuffer> activeTarget();
+  igl::IFramebuffer& activeTarget();
+  igl::IRenderCommandEncoder& activeCommandEncoder();
 
   explicit ForwardRenderPass(igl::IDevice& device);
   ~ForwardRenderPass() = default;
@@ -59,5 +61,4 @@ class ForwardRenderPass final {
   std::unique_ptr<igl::IRenderCommandEncoder> _commandEncoder;
 };
 
-} // namespace renderpass
-} // namespace iglu
+} // namespace iglu::renderpass

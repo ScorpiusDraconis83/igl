@@ -32,6 +32,9 @@ https://casual-effects.com/data/
 bc7env
 https://github.com/richgel999/bc7enc/blob/master/LICENSE
 
+Big Buck Bunny - the Peach open movie project
+https://peach.blender.org/about/
+
 Bootstrap
 https://github.com/corporateshark/bootstrapping/blob/master/LICENSE
 
@@ -70,6 +73,9 @@ https://github.com/leetal/ios-cmake/blob/master/LICENSE.md
 
 KTX-Software
 https://github.com/KhronosGroup/KTX-Software/blob/main/LICENSE.md
+
+LightweightVK
+https://github.com/corporateshark/lightweightvk/blob/main/LICENSE.md
 
 Meshoptimizer
 https://github.com/zeux/meshoptimizer/blob/master/LICENSE.md

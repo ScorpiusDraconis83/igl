@@ -14,8 +14,7 @@
 #include <igl/opengl/TextureTarget.h>
 #include <string>
 
-namespace igl {
-namespace tests {
+namespace igl::tests {
 
 // Picking this just to match the texture we will use. If you use a different
 // size texture, then you will have to either create a new offscreenTexture_
@@ -55,7 +54,7 @@ class TextureOGLTest : public ::testing::Test {
 
   // Member variables
  public:
-  opengl::IContext* context_;
+  opengl::IContext* context_{};
   std::shared_ptr<::igl::IDevice> device_;
 };
 
@@ -129,7 +128,7 @@ TEST_F(TextureOGLTest, TextureCreation) {
 TEST_F(TextureOGLTest, TextureFormats) {
   // Set up inputs and expected outputs for Texture::toTextureFormat
   // {glTexInternalFormat, glTexFormat, glTexType, expected output TextureFormat}
-  std::vector<TextureFormatData> texFormats{
+  const std::vector<TextureFormatData> texFormats{
       TextureFormatData{GL_COMPRESSED_RGBA_ASTC_4x4_KHR, 0, 0, TextureFormat::RGBA_ASTC_4x4},
       TextureFormatData{
           GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR, 0, 0, TextureFormat::SRGB8_A8_ASTC_4x4},
@@ -215,6 +214,7 @@ TEST_F(TextureOGLTest, TextureFormats) {
       TextureFormatData{GL_RG16F, 0, 0, TextureFormat::RG_F16},
       TextureFormatData{GL_RG16, 0, 0, TextureFormat::RG_UNorm16},
       TextureFormatData{GL_RG16UI, 0, 0, TextureFormat::RG_UInt16},
+      TextureFormatData{GL_RG32F, 0, 0, TextureFormat::RG_F32},
       TextureFormatData{GL_RGB16F, 0, 0, TextureFormat::RGB_F16},
       TextureFormatData{GL_RGBA16F, 0, 0, TextureFormat::RGBA_F16},
       TextureFormatData{GL_RGB32F, 0, 0, TextureFormat::RGB_F32},
@@ -252,7 +252,7 @@ TEST_F(TextureOGLTest, TextureFormats) {
   };
 
   for (auto data : texFormats) {
-    TextureFormat const output = igl::opengl::Texture::glInternalFormatToTextureFormat(
+    const TextureFormat output = igl::opengl::Texture::glInternalFormatToTextureFormat(
         data.glTexInternalFormat, data.glTexFormat, data.glTexType);
     ASSERT_EQ(output, data.texFormatOutput)
         << "IGL Format: "
@@ -273,11 +273,13 @@ TEST_F(TextureOGLTest, TextureAlignment) {
     constexpr size_t bytesPerPixel = 4;
     Result ret;
 
-    TextureDesc texDesc = TextureDesc::new2D(
+    const TextureDesc texDesc = TextureDesc::new2D(
         TextureFormat::RGBA_UNorm8, width, width, TextureDesc::TextureUsageBits::Sampled);
 
     auto texture = std::make_unique<igl::opengl::TextureTarget>(*context_, texDesc.format);
     ret = texture->create(texDesc, false);
+
+    ASSERT_EQ(texture->getAlignment((width >> 0) * bytesPerPixel), 8);
 
     ASSERT_EQ(texture->getAlignment((width >> 0) * bytesPerPixel, 0), 8);
     ASSERT_EQ(texture->getAlignment((width >> 1) * bytesPerPixel, 1), 8);
@@ -287,6 +289,23 @@ TEST_F(TextureOGLTest, TextureAlignment) {
     ASSERT_EQ(texture->getAlignment((width >> 5) * bytesPerPixel, 5), 8);
     ASSERT_EQ(texture->getAlignment((width >> 6) * bytesPerPixel, 6), 8);
     ASSERT_EQ(texture->getAlignment((width >> 7) * bytesPerPixel, 7), 4);
+
+    ASSERT_EQ(texture->getAlignment((width >> 0) * bytesPerPixel, 0, width >> 0), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 1) * bytesPerPixel, 1, width >> 1), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 2) * bytesPerPixel, 2, width >> 2), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 3) * bytesPerPixel, 3, width >> 3), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 4) * bytesPerPixel, 4, width >> 4), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 5) * bytesPerPixel, 5, width >> 5), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 6) * bytesPerPixel, 6, width >> 6), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 7) * bytesPerPixel, 7, width >> 7), 4);
+
+    ASSERT_EQ(texture->getAlignment((width >> 1) * bytesPerPixel, 0, width >> 1), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 2) * bytesPerPixel, 1, width >> 2), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 3) * bytesPerPixel, 2, width >> 3), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 4) * bytesPerPixel, 3, width >> 4), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 5) * bytesPerPixel, 4, width >> 5), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 6) * bytesPerPixel, 5, width >> 6), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 7) * bytesPerPixel, 6, width >> 7), 4);
   }
 
   {
@@ -294,19 +313,31 @@ TEST_F(TextureOGLTest, TextureAlignment) {
     constexpr size_t bytesPerPixel = 4;
     Result ret;
 
-    TextureDesc texDesc = TextureDesc::new2D(
+    const TextureDesc texDesc = TextureDesc::new2D(
         TextureFormat::RGBA_UNorm8, width, width, TextureDesc::TextureUsageBits::Sampled);
 
     auto texture = std::make_unique<igl::opengl::TextureTarget>(*context_, texDesc.format);
     ret = texture->create(texDesc, false);
+
+    ASSERT_EQ(texture->getAlignment((width >> 0) * bytesPerPixel), 8);
 
     ASSERT_EQ(texture->getAlignment((width >> 0) * bytesPerPixel, 0), 8);
     ASSERT_EQ(texture->getAlignment((width >> 1) * bytesPerPixel, 1), 8);
     ASSERT_EQ(texture->getAlignment((width >> 2) * bytesPerPixel, 2), 8);
     ASSERT_EQ(texture->getAlignment((width >> 3) * bytesPerPixel, 3), 4);
     ASSERT_EQ(texture->getAlignment((width >> 4) * bytesPerPixel, 4), 4);
+
+    ASSERT_EQ(texture->getAlignment((width >> 0) * bytesPerPixel, 0, width >> 0), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 1) * bytesPerPixel, 1, width >> 1), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 2) * bytesPerPixel, 2, width >> 2), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 3) * bytesPerPixel, 3, width >> 3), 4);
+    ASSERT_EQ(texture->getAlignment((width >> 4) * bytesPerPixel, 4, width >> 4), 4);
+
+    ASSERT_EQ(texture->getAlignment((width >> 1) * bytesPerPixel, 0, width >> 1), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 2) * bytesPerPixel, 1, width >> 2), 8);
+    ASSERT_EQ(texture->getAlignment((width >> 3) * bytesPerPixel, 2, width >> 3), 4);
+    ASSERT_EQ(texture->getAlignment((width >> 4) * bytesPerPixel, 3, width >> 4), 4);
   }
 }
 
-} // namespace tests
-} // namespace igl
+} // namespace igl::tests

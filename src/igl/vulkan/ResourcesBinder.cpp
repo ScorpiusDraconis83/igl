@@ -13,74 +13,75 @@
 #include <igl/vulkan/VulkanBuffer.h>
 #include <igl/vulkan/VulkanContext.h>
 #include <igl/vulkan/VulkanImage.h>
-#include <igl/vulkan/VulkanPipelineLayout.h>
 #include <igl/vulkan/VulkanTexture.h>
 
-namespace igl {
+namespace igl::vulkan {
 
-namespace vulkan {
-
-ResourcesBinder::ResourcesBinder(const std::shared_ptr<CommandBuffer>& commandBuffer,
-                                 const VulkanContext& ctx,
+ResourcesBinder::ResourcesBinder(const CommandBuffer* commandBuffer,
+                                 VulkanContext& ctx,
                                  VkPipelineBindPoint bindPoint) :
-  ctx_(ctx), cmdBuffer_(commandBuffer->getVkCommandBuffer()), bindPoint_(bindPoint) {}
+  ctx_(ctx),
+  cmdBuffer_(commandBuffer ? commandBuffer->getVkCommandBuffer() : VK_NULL_HANDLE),
+  bindPoint_(bindPoint),
+  nextSubmitHandle_(commandBuffer ? commandBuffer->getNextSubmitHandle()
+                                  : VulkanImmediateCommands::SubmitHandle{}) {}
 
-void ResourcesBinder::bindUniformBuffer(uint32_t index,
-                                        igl::vulkan::Buffer* buffer,
-                                        size_t bufferOffset) {
+void ResourcesBinder::bindBuffer(uint32_t index,
+                                 igl::vulkan::Buffer* buffer,
+                                 size_t bufferOffset,
+                                 size_t bufferSize) {
   IGL_PROFILER_FUNCTION();
 
-  if (!IGL_VERIFY(index < IGL_UNIFORM_BLOCKS_BINDING_MAX)) {
-    IGL_ASSERT_MSG(false, "Buffer index should not exceed kMaxBindingSlots");
+  if (!IGL_DEBUG_VERIFY(index < IGL_UNIFORM_BLOCKS_BINDING_MAX)) {
+    IGL_DEBUG_ABORT("Buffer index should not exceed kMaxBindingSlots");
     return;
   }
 
-  IGL_ASSERT_MSG((buffer->getBufferType() & BufferDesc::BufferTypeBits::Uniform) != 0,
-                 "The buffer must be a uniform buffer");
+  const bool isUniformBuffer =
+      ((buffer->getBufferType() & BufferDesc::BufferTypeBits::Uniform) != 0);
+
+  IGL_DEBUG_ASSERT(isUniformBuffer ||
+                       ((buffer->getBufferType() & BufferDesc::BufferTypeBits::Storage) != 0),
+                   "The buffer must be a uniform or storage buffer");
+  if (bufferOffset) {
+    const auto& limits = ctx_.getVkPhysicalDeviceProperties().limits;
+    const uint32_t alignment =
+        static_cast<uint32_t>(isUniformBuffer ? limits.minUniformBufferOffsetAlignment
+                                              : limits.minStorageBufferOffsetAlignment);
+    if (!IGL_DEBUG_VERIFY((alignment == 0) || (bufferOffset % alignment == 0))) {
+      IGL_LOG_ERROR("`bufferOffset = %u` must be a multiple of `VkPhysicalDeviceLimits::%s = %u`",
+                    static_cast<uint32_t>(bufferOffset),
+                    isUniformBuffer ? "minUniformBufferOffsetAlignment"
+                                    : "minStorageBufferOffsetAlignment",
+                    alignment);
+      return;
+    }
+  }
 
   VkBuffer buf = buffer ? buffer->getVkBuffer() : ctx_.dummyUniformBuffer_->getVkBuffer();
-  VkDescriptorBufferInfo& slot = bindingsUniformBuffers_.buffers[index];
+  VkDescriptorBufferInfo& slot = bindingsBuffers_.buffers[index];
 
   if (slot.buffer != buf || slot.offset != bufferOffset) {
-    slot = {buf, bufferOffset, VK_WHOLE_SIZE};
-    isDirtyFlags_ |= DirtyFlagBits_UniformBuffers;
-  }
-}
-
-void ResourcesBinder::bindStorageBuffer(uint32_t index,
-                                        igl::vulkan::Buffer* buffer,
-                                        size_t bufferOffset) {
-  IGL_PROFILER_FUNCTION();
-
-  if (!IGL_VERIFY(index < IGL_UNIFORM_BLOCKS_BINDING_MAX)) {
-    IGL_ASSERT_MSG(false, "Buffer index should not exceed kMaxBindingSlots");
-    return;
-  }
-
-  IGL_ASSERT_MSG((buffer->getBufferType() & BufferDesc::BufferTypeBits::Storage) != 0,
-                 "The buffer must be a storage buffer");
-
-  VkBuffer buf = buffer ? buffer->getVkBuffer() : ctx_.dummyStorageBuffer_->getVkBuffer();
-  VkDescriptorBufferInfo& slot = bindingsStorageBuffers_.buffers[index];
-
-  if (slot.buffer != buf || slot.offset != bufferOffset) {
-    slot = {buf, bufferOffset, VK_WHOLE_SIZE};
-    isDirtyFlags_ |= DirtyFlagBits_StorageBuffers;
+    slot = {buf, bufferOffset, bufferSize ? bufferSize : VK_WHOLE_SIZE};
+    isDirtyFlags_ |= DirtyFlagBits_Buffers;
   }
 }
 
 void ResourcesBinder::bindSamplerState(uint32_t index, igl::vulkan::SamplerState* samplerState) {
   IGL_PROFILER_FUNCTION();
 
-  if (!IGL_VERIFY(index < IGL_TEXTURE_SAMPLERS_MAX)) {
-    IGL_ASSERT_MSG(false, "Invalid sampler index");
+  if (!IGL_DEBUG_VERIFY(index < IGL_TEXTURE_SAMPLERS_MAX)) {
+    IGL_DEBUG_ABORT("Invalid sampler index");
     return;
   }
 
-  igl::vulkan::VulkanSampler* newSampler = samplerState ? samplerState->sampler_.get() : nullptr;
+  igl::vulkan::VulkanSampler* newSampler = samplerState ? ctx_.samplers_.get(samplerState->sampler_)
+                                                        : nullptr;
 
-  if (bindingsTextures_.samplers[index] != newSampler) {
-    bindingsTextures_.samplers[index] = newSampler;
+  VkSampler sampler = newSampler ? newSampler->vkSampler : VK_NULL_HANDLE;
+
+  if (bindingsTextures_.samplers[index] != sampler) {
+    bindingsTextures_.samplers[index] = sampler;
     isDirtyFlags_ |= DirtyFlagBits_Textures;
   }
 }
@@ -88,8 +89,8 @@ void ResourcesBinder::bindSamplerState(uint32_t index, igl::vulkan::SamplerState
 void ResourcesBinder::bindTexture(uint32_t index, igl::vulkan::Texture* tex) {
   IGL_PROFILER_FUNCTION();
 
-  if (!IGL_VERIFY(index < IGL_TEXTURE_SAMPLERS_MAX)) {
-    IGL_ASSERT_MSG(false, "Invalid texture index");
+  if (!IGL_DEBUG_VERIFY(index < IGL_TEXTURE_SAMPLERS_MAX)) {
+    IGL_DEBUG_ABORT("Invalid texture index");
     return;
   }
 
@@ -100,16 +101,15 @@ void ResourcesBinder::bindTexture(uint32_t index, igl::vulkan::Texture* tex) {
                                : false;
 
     if (isGraphics()) {
-      if (!IGL_VERIFY(isSampled || isStorage)) {
-        IGL_ASSERT_MSG(false,
-                       "Did you forget to specify TextureUsageBits::Sampled or "
-                       "TextureUsageBits::Storage on your texture? `Sampled` is used for sampling; "
-                       "`Storage` is used for load/store operations");
+      if (!IGL_DEBUG_VERIFY(isSampled || isStorage)) {
+        IGL_DEBUG_ABORT(
+            "Did you forget to specify TextureUsageBits::Sampled or "
+            "TextureUsageBits::Storage on your texture? `Sampled` is used for sampling; "
+            "`Storage` is used for load/store operations");
       }
     } else {
-      if (!IGL_VERIFY(isStorage)) {
-        IGL_ASSERT_MSG(false,
-                       "Did you forget to specify TextureUsageBits::Storage on your texture?");
+      if (!IGL_DEBUG_VERIFY(isStorage)) {
+        IGL_DEBUG_ABORT("Did you forget to specify TextureUsageBits::Storage on your texture?");
       }
     }
   }
@@ -118,23 +118,31 @@ void ResourcesBinder::bindTexture(uint32_t index, igl::vulkan::Texture* tex) {
 
 #if IGL_DEBUG
   if (newTexture) {
-    igl::vulkan::VulkanImage& img = newTexture->getVulkanImage();
-    IGL_ASSERT_MSG(img.samples_ == VK_SAMPLE_COUNT_1_BIT,
-                   "Multisampled images cannot be sampled in shaders");
+    const igl::vulkan::VulkanImage& img = newTexture->image_;
+    IGL_DEBUG_ASSERT(img.samples_ == VK_SAMPLE_COUNT_1_BIT,
+                     "Multisampled images cannot be sampled in shaders");
     if (bindPoint_ == VK_PIPELINE_BIND_POINT_GRAPHICS) {
       // If you trip this assert, then you are likely using an IGL texture
       // that was not rendered to by IGL. If that's the case, then make sure
       // the underlying image is transitioned to
       // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-      // IGL_ASSERT(img.imageLayout_ == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      IGL_DEBUG_ASSERT(img.imageLayout_ == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     } else {
-      IGL_ASSERT(img.imageLayout_ == VK_IMAGE_LAYOUT_GENERAL);
+      IGL_DEBUG_ASSERT(img.imageLayout_ == VK_IMAGE_LAYOUT_GENERAL);
     }
   }
 #endif // IGL_DEBUG
 
-  if (bindingsTextures_.textures[index] != newTexture) {
-    bindingsTextures_.textures[index] = newTexture;
+  // multisampled images cannot be directly accessed from shaders
+  const bool isTextureAvailable =
+      (newTexture != nullptr) &&
+      ((newTexture->image_.samples_ & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT);
+  const bool isSampledImage = isTextureAvailable && newTexture->image_.isSampledImage();
+
+  VkImageView imageView = isSampledImage ? newTexture->imageView_.vkImageView_ : VK_NULL_HANDLE;
+
+  if (bindingsTextures_.textures[index] != imageView) {
+    bindingsTextures_.textures[index] = imageView;
     isDirtyFlags_ |= DirtyFlagBits_Textures;
   }
 }
@@ -142,48 +150,41 @@ void ResourcesBinder::bindTexture(uint32_t index, igl::vulkan::Texture* tex) {
 void ResourcesBinder::updateBindings(VkPipelineLayout layout, const vulkan::PipelineState& state) {
   IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_UPDATE);
 
-  IGL_ASSERT(layout != VK_NULL_HANDLE);
+  IGL_DEBUG_ASSERT(layout != VK_NULL_HANDLE);
 
   if (isDirtyFlags_ & DirtyFlagBits_Textures) {
     ctx_.updateBindingsTextures(cmdBuffer_,
                                 layout,
                                 bindPoint_,
+                                nextSubmitHandle_,
                                 bindingsTextures_,
                                 *state.dslCombinedImageSamplers_,
                                 state.info_);
   }
-  if (isDirtyFlags_ & DirtyFlagBits_UniformBuffers) {
-    ctx_.updateBindingsUniformBuffers(cmdBuffer_,
-                                      layout,
-                                      bindPoint_,
-                                      bindingsUniformBuffers_,
-                                      *state.dslUniformBuffers_,
-                                      state.info_);
-  }
-  if (isDirtyFlags_ & DirtyFlagBits_StorageBuffers) {
-    ctx_.updateBindingsStorageBuffers(cmdBuffer_,
-                                      layout,
-                                      bindPoint_,
-                                      bindingsStorageBuffers_,
-                                      *state.dslStorageBuffers_,
-                                      state.info_);
+  if (isDirtyFlags_ & DirtyFlagBits_Buffers) {
+    ctx_.updateBindingsBuffers(cmdBuffer_,
+                               layout,
+                               bindPoint_,
+                               nextSubmitHandle_,
+                               bindingsBuffers_,
+                               *state.dslBuffers_,
+                               state.info_);
   }
 
   isDirtyFlags_ = 0;
 }
 
 void ResourcesBinder::bindPipeline(VkPipeline pipeline, const util::SpvModuleInfo* info) {
+  IGL_PROFILER_FUNCTION();
+
   if (lastPipelineBound_ == pipeline) {
     return;
   }
 
   if (info) {
     // a new pipeline might want a new descriptors configuration
-    if (!info->uniformBuffers.empty()) {
-      isDirtyFlags_ |= DirtyFlagBits_UniformBuffers;
-    }
-    if (!info->storageBuffers.empty()) {
-      isDirtyFlags_ |= DirtyFlagBits_StorageBuffers;
+    if (!info->buffers.empty()) {
+      isDirtyFlags_ |= DirtyFlagBits_Buffers;
     }
     if (!info->textures.empty()) {
       isDirtyFlags_ |= DirtyFlagBits_Textures;
@@ -203,5 +204,4 @@ void ResourcesBinder::bindPipeline(VkPipeline pipeline, const util::SpvModuleInf
   }
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

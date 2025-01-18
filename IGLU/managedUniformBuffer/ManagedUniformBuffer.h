@@ -10,10 +10,6 @@
 #include <igl/IGL.h>
 #include <vector>
 
-namespace igl {
-class IDevice;
-} // namespace igl
-
 namespace iglu {
 struct ManagedUniformBufferInfo {
   int index = -1;
@@ -39,10 +35,8 @@ class ManagedUniformBuffer {
             const igl::IRenderPipelineState& pipelineState,
             igl::IRenderCommandEncoder& encoder);
   void bind(const igl::IDevice& device,
-            const igl::IRenderPipelineState& pipelineState,
-            igl::IRenderCommandEncoder& encoder,
-            uint8_t bindTarget); // see igl::BindTarget
-  void bind(const igl::IDevice& device, igl::IComputeCommandEncoder& encoder);
+            const igl::IComputePipelineState& pipelineState,
+            igl::IComputeCommandEncoder& encoder);
 
   void* getData();
 

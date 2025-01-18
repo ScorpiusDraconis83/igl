@@ -9,9 +9,7 @@
 
 #include <igl/opengl/ios/TextureBuffer.h>
 
-namespace igl {
-namespace opengl {
-namespace ios {
+namespace igl::opengl::ios {
 namespace {
 /// The conversion from CVPixelFormatType to igl::TextureFormat is inferred from CVPixelBuffer.h
 TextureFormat convertToTextureFormat(const DeviceFeatureSet& deviceFeatures,
@@ -29,7 +27,7 @@ TextureFormat convertToTextureFormat(const DeviceFeatureSet& deviceFeatures,
 
   case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
   case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange: {
-    bool supportsRG = deviceFeatures.hasFeature(DeviceFeatures::TextureFormatRG);
+    const bool supportsRG = deviceFeatures.hasFeature(DeviceFeatures::TextureFormatRG);
 
     if (planeIndex == 0) {
       return supportsRG ? TextureFormat::R_UNorm8 : TextureFormat::A_UNorm8;
@@ -52,7 +50,7 @@ TextureFormat convertToTextureFormat(const DeviceFeatureSet& deviceFeatures,
     return TextureFormat::Invalid;
   }
 }
-}
+} // namespace
 
 TextureBuffer::TextureBuffer(IContext& context,
                              CVPixelBufferRef pixelBuffer,
@@ -140,7 +138,7 @@ Result TextureBuffer::createWithSize(size_t width, size_t height) {
     getContext().getIntegerv(GL_UNPACK_ALIGNMENT, &prevUnpackAlignment);
 
     const size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer_);
-    getContext().pixelStorei(GL_UNPACK_ALIGNMENT, this->getAlignment(bytesPerRow, 0));
+    getContext().pixelStorei(GL_UNPACK_ALIGNMENT, this->getAlignment(bytesPerRow));
 
     BOOL requiresLineByLineUpload = NO;
     const auto bytesPerPixel = getProperties().bytesPerBlock;
@@ -220,6 +218,4 @@ Result TextureBuffer::uploadInternal(TextureType /*type*/,
   return Result();
 }
 
-} // igl
-} // opengl
-} // igl
+} // namespace igl::opengl::ios

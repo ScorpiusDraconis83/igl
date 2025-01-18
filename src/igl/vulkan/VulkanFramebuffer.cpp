@@ -9,8 +9,7 @@
 
 #include "VulkanContext.h"
 
-namespace igl {
-namespace vulkan {
+namespace igl::vulkan {
 VulkanFramebuffer::VulkanFramebuffer(const VulkanContext& ctx,
                                      VkDevice device,
                                      uint32_t width,
@@ -21,6 +20,13 @@ VulkanFramebuffer::VulkanFramebuffer(const VulkanContext& ctx,
                                      const char* debugName) :
   ctx_(ctx), device_(device) {
   IGL_PROFILER_FUNCTION_COLOR(IGL_PROFILER_COLOR_CREATE);
+
+  if (!IGL_DEBUG_VERIFY(renderPass != VK_NULL_HANDLE)) {
+    return;
+  }
+  if (!IGL_DEBUG_VERIFY(attachments)) {
+    return;
+  }
 
   VK_ASSERT(ivkCreateFramebuffer(
       &ctx_.vf_, device_, width, height, renderPass, numAttachments, attachments, &vkFramebuffer_));
@@ -37,5 +43,4 @@ VulkanFramebuffer::~VulkanFramebuffer() {
       }));
 }
 
-} // namespace vulkan
-} // namespace igl
+} // namespace igl::vulkan

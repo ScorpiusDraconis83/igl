@@ -10,7 +10,6 @@
 #include <igl/Common.h>
 #include <igl/opengl/GLIncludes.h>
 #include <igl/opengl/IContext.h>
-#include <igl/opengl/Texture.h>
 
 namespace igl::opengl {
 namespace {
@@ -118,6 +117,51 @@ ShaderVersion DeviceFeatureSet::getShaderVersion() const {
   return ::igl::opengl::getShaderVersion(version_);
 }
 
+BackendVersion DeviceFeatureSet::getBackendVersion() const {
+  switch (version_) {
+  case GLVersion::v1_1:
+    return {BackendFlavor::OpenGL, 1, 1};
+  case GLVersion::v2_0:
+    return {BackendFlavor::OpenGL, 2, 0};
+  case GLVersion::v2_1:
+    return {BackendFlavor::OpenGL, 2, 1};
+  case GLVersion::v3_0:
+    return {BackendFlavor::OpenGL, 3, 0};
+  case GLVersion::v3_1:
+    return {BackendFlavor::OpenGL, 3, 1};
+  case GLVersion::v3_2:
+    return {BackendFlavor::OpenGL, 3, 2};
+  case GLVersion::v3_3:
+    return {BackendFlavor::OpenGL, 3, 3};
+  case GLVersion::v4_0:
+    return {BackendFlavor::OpenGL, 4, 0};
+  case GLVersion::v4_1:
+    return {BackendFlavor::OpenGL, 4, 1};
+  case GLVersion::v4_2:
+    return {BackendFlavor::OpenGL, 4, 2};
+  case GLVersion::v4_3:
+    return {BackendFlavor::OpenGL, 4, 3};
+  case GLVersion::v4_4:
+    return {BackendFlavor::OpenGL, 4, 4};
+  case GLVersion::v4_5:
+    return {BackendFlavor::OpenGL, 4, 5};
+  case GLVersion::v4_6:
+    return {BackendFlavor::OpenGL, 4, 6};
+  case GLVersion::v2_0_ES:
+    return {BackendFlavor::OpenGL_ES, 2, 0};
+  case GLVersion::v3_0_ES:
+    return {BackendFlavor::OpenGL_ES, 3, 0};
+  case GLVersion::v3_1_ES:
+    return {BackendFlavor::OpenGL_ES, 3, 1};
+  case GLVersion::v3_2_ES:
+    return {BackendFlavor::OpenGL_ES, 3, 2};
+  case GLVersion::NotAvailable:
+    IGL_DEBUG_ASSERT_NOT_REACHED();
+    return {usesOpenGLES() ? BackendFlavor::OpenGL_ES : BackendFlavor::OpenGL, 2, 0};
+  }
+  IGL_UNREACHABLE_RETURN({});
+}
+
 bool DeviceFeatureSet::isSupported(const std::string& extensionName) const {
   if (!extensions_.empty()) {
     return extensions_.find(extensionName) != std::string::npos;
@@ -168,6 +212,10 @@ bool DeviceFeatureSet::isExtensionSupported(Extensions extension) const {
     return hasESExtension(*this, "GL_EXT_multisampled_render_to_texture");
   case Extensions::MultiSampleImg:
     return hasESExtension(*this, "GL_IMG_multisampled_render_to_texture");
+  case Extensions::MultiViewMultiSample:
+    return hasESExtension(*this, "GL_OVR_multiview_multisampled_render_to_texture");
+  case Extensions::PolygonOffsetClamp:
+    return hasDesktopOrESExtension(*this, "GL_ARB_polygon_offset_clamp");
   case Extensions::RequiredInternalFormat:
     return hasESExtension(*this, "GL_OES_required_internalformat");
   case Extensions::ShaderImageLoadStore:
@@ -336,6 +384,9 @@ bool DeviceFeatureSet::isFeatureSupported(DeviceFeatures feature) const {
     return hasDesktopOrESVersion(*this, GLVersion::v3_0, GLVersion::v3_0_ES) &&
            isSupported("GL_OVR_multiview2");
 
+  case DeviceFeatures::MultiViewMultisample:
+    return hasExtension(Extensions::MultiViewMultiSample);
+
   case DeviceFeatures::TexturePartialMipChain:
     return hasDesktopOrESVersion(*this, GLVersion::v2_0, GLVersion::v3_0_ES) ||
            hasESExtension(*this, "GL_APPLE_texture_max_level");
@@ -367,12 +418,19 @@ bool DeviceFeatureSet::isFeatureSupported(DeviceFeatures feature) const {
   case DeviceFeatures::SamplerMinMaxLod:
     return hasDesktopOrESVersion(*this, GLVersion::v2_0, GLVersion::v3_0_ES);
 
+  case DeviceFeatures::DrawFirstIndexFirstVertex:
+    // https://registry.khronos.org/OpenGL-Refpages/es3/html/glDrawElementsInstancedBaseVertex.xhtml
+    return hasDesktopOrESVersion(*this, GLVersion::v4_0, GLVersion::v3_2_ES);
+
   case DeviceFeatures::DrawIndexedIndirect:
     return hasDesktopOrESVersionOrExtension(
         *this, GLVersion::v4_0, GLVersion::v3_1_ES, "GL_ARB_draw_indirect");
 
   case DeviceFeatures::ValidationLayersEnabled:
     return false;
+
+  case DeviceFeatures::Indices8Bit:
+    return true;
   }
 
   return false;
@@ -471,7 +529,21 @@ bool DeviceFeatureSet::isInternalFeatureSupported(InternalFeatures feature) cons
   case InternalFeatures::VertexAttribDivisor:
     return hasDesktopOrESVersion(*this, GLVersion::v3_3, GLVersion::v3_0_ES) ||
            hasExtension(Extensions::VertexAttribDivisor);
+
+  case InternalFeatures::DrawArraysIndirect:
+    return hasDesktopOrESVersionOrExtension(
+        *this, GLVersion::v4_0, GLVersion::v3_1_ES, "GL_ARB_draw_indirect");
+
+  case InternalFeatures::DrawArraysInstanced:
+    return hasDesktopOrESVersion(*this, GLVersion::v3_1, GLVersion::v3_0_ES);
+
+  case InternalFeatures::PackRowLength:
+    return hasDesktopOrESVersion(*this, GLVersion::v2_0, GLVersion::v3_0_ES);
+
+  case InternalFeatures::DrawElementsInstanced:
+    return hasDesktopOrESVersion(*this, GLVersion::v3_1, GLVersion::v3_0_ES);
   }
+
   return false;
 }
 
@@ -773,7 +845,7 @@ bool DeviceFeatureSet::isTextureFeatureSupported(TextureFeatures feature) const 
 
 bool DeviceFeatureSet::hasExtension(Extensions extension) const {
   const uint64_t extensionIndex = static_cast<uint64_t>(extension);
-  IGL_ASSERT(extensionIndex < 64);
+  IGL_DEBUG_ASSERT(extensionIndex < 64);
   const uint64_t extensionBit = 1ull << extensionIndex;
   if ((extensionCacheInitialized_ & extensionBit) == 0) {
     if (isExtensionSupported(extension)) {
@@ -787,7 +859,7 @@ bool DeviceFeatureSet::hasExtension(Extensions extension) const {
 
 bool DeviceFeatureSet::hasFeature(DeviceFeatures feature) const {
   const uint64_t featureIndex = static_cast<uint64_t>(feature);
-  IGL_ASSERT(featureIndex < 64);
+  IGL_DEBUG_ASSERT(featureIndex < 64);
   const uint64_t featureBit = 1ull << featureIndex;
   if ((featureCacheInitialized_ & featureBit) == 0) {
     if (isFeatureSupported(feature)) {
@@ -801,7 +873,7 @@ bool DeviceFeatureSet::hasFeature(DeviceFeatures feature) const {
 
 bool DeviceFeatureSet::hasInternalFeature(InternalFeatures feature) const {
   const uint32_t featureIndex = static_cast<uint32_t>(feature);
-  IGL_ASSERT(featureIndex < 32);
+  IGL_DEBUG_ASSERT(featureIndex < 32);
   const uint32_t featureBit = 1u << featureIndex;
   if ((internalFeatureCacheInitialized_ & featureBit) == 0) {
     if (isInternalFeatureSupported(feature)) {
@@ -815,7 +887,7 @@ bool DeviceFeatureSet::hasInternalFeature(InternalFeatures feature) const {
 
 bool DeviceFeatureSet::hasTextureFeature(TextureFeatures feature) const {
   const uint64_t featureIndex = static_cast<uint64_t>(feature);
-  IGL_ASSERT(featureIndex < 64);
+  IGL_DEBUG_ASSERT(featureIndex < 64);
   const uint64_t featureBit = 1ull << featureIndex;
   if ((textureFeatureCacheInitialized_ & featureBit) == 0) {
     if (isTextureFeatureSupported(feature)) {
@@ -1033,6 +1105,14 @@ bool DeviceFeatureSet::getFeatureLimits(DeviceFeatureLimits featureLimits, size_
     return true;
   case DeviceFeatureLimits::BufferAlignment:
     result = 16;
+#ifdef GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT
+    if (hasFeature(DeviceFeatures::UniformBlocks)) {
+      if (glContext_.isCurrentContext()) {
+        glContext_.getIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &tsize);
+        result = std::max((size_t)tsize, result);
+      }
+    }
+#endif
     return true;
   case DeviceFeatureLimits::BufferNoCopyAlignment:
     result = 0;
@@ -1041,9 +1121,9 @@ bool DeviceFeatureSet::getFeatureLimits(DeviceFeatureLimits featureLimits, size_
     result = 0;
     return true;
   default:
-    IGL_ASSERT_MSG(0,
-                   "invalid feature limit query: feature limit query is not implemented or does "
-                   "not exist\n");
+    IGL_DEBUG_ABORT(
+        "invalid feature limit query: feature limit query is not implemented or does "
+        "not exist\n");
     return false;
   }
 }
@@ -1235,6 +1315,7 @@ ICapabilities::TextureFormatCapabilities DeviceFeatureSet::getTextureFormatCapab
       capabilities |= sampledFiltered;
     }
     break;
+  case TextureFormat::RG_F32:
   case TextureFormat::R_F32:
     if (hasFeature(DeviceFeatures::TextureFormatRG)) {
       if (hasFeature(DeviceFeatures::TextureFloat)) {
@@ -1488,7 +1569,7 @@ ICapabilities::TextureFormatCapabilities DeviceFeatureSet::getTextureFormatCapab
 }
 
 uint32_t DeviceFeatureSet::getMaxVertexUniforms() const {
-  GLint tsize;
+  GLint tsize = 0;
   // MaxVertexUniformVectors is the maximum number of 4-element vectors that can be passed as
   // uniform to a vertex shader. All uniforms are 4-element aligned, a single uniform counts at
   // least as one 4-element vector.
@@ -1505,7 +1586,7 @@ uint32_t DeviceFeatureSet::getMaxVertexUniforms() const {
 }
 
 uint32_t DeviceFeatureSet::getMaxFragmentUniforms() const {
-  GLint tsize;
+  GLint tsize = 0;
   // PLease see comments above in getMaxVertexUniforms
   if (hasDesktopOrESVersion(*this, GLVersion::v2_0, GLVersion::v3_0_ES)) {
     glContext_.getIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &tsize);
@@ -1518,7 +1599,7 @@ uint32_t DeviceFeatureSet::getMaxFragmentUniforms() const {
 
 uint32_t DeviceFeatureSet::getMaxComputeUniforms() const {
   if (hasFeature(DeviceFeatures::Compute)) {
-    GLint tsize;
+    GLint tsize = 0;
     glContext_.getIntegerv(GL_MAX_COMPUTE_UNIFORM_COMPONENTS, &tsize);
     return static_cast<uint32_t>(tsize);
   }

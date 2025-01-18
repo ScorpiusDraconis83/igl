@@ -12,8 +12,11 @@
 #include <igl/opengl/GLIncludes.h>
 #include <igl/opengl/PlatformDevice.h>
 
-namespace igl {
-namespace opengl {
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+struct AHardwareBuffer;
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
+
+namespace igl::opengl {
 
 class ViewTextureTarget;
 
@@ -26,7 +29,7 @@ class PlatformDevice : public opengl::PlatformDevice {
  public:
   static constexpr igl::PlatformDeviceType Type = igl::PlatformDeviceType::OpenGLEgl;
 
-  PlatformDevice(Device& owner);
+  explicit PlatformDevice(Device& owner);
   ~PlatformDevice() override = default;
 
   /// Returns a texture representing the EGL Surface associated with this device's context.
@@ -37,16 +40,17 @@ class PlatformDevice : public opengl::PlatformDevice {
                                                             Result* outResult);
 
   /// Returns a texture representing the EGL depth texture associated with this device's context.
-  std::shared_ptr<ITexture> createTextureFromNativeDepth(Result* outResult);
+  std::shared_ptr<ITexture> createTextureFromNativeDepth(TextureFormat depthTextureFormat,
+                                                         Result* outResult);
 
-#if IGL_PLATFORM_ANDROID && __ANDROID_MIN_SDK_VERSION__ >= 26
-
+#if defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
   /// returns a android::NativeHWTextureBuffer on platforms supporting it
   /// this texture allows CPU and GPU to both read/write memory
   std::shared_ptr<ITexture> createTextureWithSharedMemory(const TextureDesc& desc,
-                                                          Result* outResult);
-
-#endif
+                                                          Result* outResult) const;
+  std::shared_ptr<ITexture> createTextureWithSharedMemory(AHardwareBuffer* buffer,
+                                                          Result* outResult) const;
+#endif // defined(IGL_ANDROID_HWBUFFER_SUPPORTED)
 
   /// This function must be called every time the currently bound EGL read and/or draw surfaces
   /// change, in order to notify IGL of these changes.
@@ -59,7 +63,7 @@ class PlatformDevice : public opengl::PlatformDevice {
   void setPresentationTime(long long presentationTimeNs, Result* outResult);
 
  protected:
-  bool isType(PlatformDeviceType t) const noexcept override;
+  [[nodiscard]] bool isType(PlatformDeviceType t) const noexcept override;
 
  private:
   std::shared_ptr<ViewTextureTarget> drawableTexture_;
@@ -68,5 +72,4 @@ class PlatformDevice : public opengl::PlatformDevice {
 };
 
 } // namespace egl
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

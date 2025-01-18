@@ -18,8 +18,7 @@
 
 #include "imgui.h"
 
-namespace iglu {
-namespace imgui {
+namespace iglu::imgui {
 
 class Session {
  public:
@@ -32,6 +31,7 @@ class Session {
   ~Session();
 
   void initialize(igl::IDevice& device);
+  void drawFPS(float fps) const;
 
  private:
   class Renderer;
@@ -40,10 +40,9 @@ class Session {
   std::shared_ptr<InputListener> _inputListener;
   ImGuiContext* _context;
   std::unique_ptr<Renderer> _renderer;
-  bool _isInitialized;
+  bool _isInitialized = false;
 
   void makeCurrentContext() const;
 };
 
-} // namespace imgui
-} // namespace iglu
+} // namespace iglu::imgui

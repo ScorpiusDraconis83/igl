@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 
 project(IGLOpenGL CXX C)
 
@@ -71,7 +71,7 @@ if(APPLE)
     set(PLATFORM_FRAMEWORKS "-framework OpenGLES" "-framework CoreVideo")
     set(OPENGL_DEPRECATION_FLAG GLES_SILENCE_DEPRECATION)
   else()
-    set(PLATFORM_FRAMEWORKS "-framework OpenGL" "-framework Cocoa")
+    set(PLATFORM_FRAMEWORKS "-framework OpenGL" "-framework Cocoa" "-framework CoreVideo")
     set(OPENGL_DEPRECATION_FLAG GL_SILENCE_DEPRECATION)
   endif()
   target_link_libraries(IGLOpenGL PRIVATE "-framework IOKit" "-framework CoreFoundation" ${PLATFORM_FRAMEWORKS})
@@ -88,7 +88,7 @@ if(NOT APPLE AND NOT ANDROID AND NOT EMSCRIPTEN)
   target_link_libraries(IGLOpenGL PUBLIC OpenGL::GL)
 endif()
 
-igl_set_cxxstd(IGLOpenGL 17)
+igl_set_cxxstd(IGLOpenGL 20)
 igl_set_folder(IGLOpenGL "IGL")
 
 if(WIN32)

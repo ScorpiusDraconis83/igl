@@ -15,6 +15,7 @@
 #include <igl/vulkan/CommandBuffer.h>
 #include <igl/vulkan/RenderPipelineState.h>
 #include <igl/vulkan/ResourcesBinder.h>
+#include <igl/vulkan/VulkanImage.h>
 #include <igl/vulkan/VulkanImmediateCommands.h>
 
 namespace igl::vulkan {
@@ -31,7 +32,7 @@ class RenderCommandEncoder : public IRenderCommandEncoder {
       Result* outResult);
 
   ~RenderCommandEncoder() override {
-    IGL_ASSERT(!isEncoding_); // did you forget to call endEncoding()?
+    IGL_DEBUG_ASSERT(!isEncoding_); // did you forget to call endEncoding()?
     endEncoding();
   }
 
@@ -52,10 +53,9 @@ class RenderCommandEncoder : public IRenderCommandEncoder {
   void bindRenderPipelineState(const std::shared_ptr<IRenderPipelineState>& pipelineState) override;
   void bindDepthStencilState(const std::shared_ptr<IDepthStencilState>& depthStencilState) override;
 
-  void bindBuffer(int index,
-                  uint8_t target,
-                  const std::shared_ptr<IBuffer>& buffer,
-                  size_t bufferOffset) override;
+  void bindBuffer(uint32_t index, IBuffer* buffer, size_t bufferOffset, size_t bufferSize) override;
+  void bindVertexBuffer(uint32_t index, IBuffer& buffer, size_t bufferOffset) override;
+  void bindIndexBuffer(IBuffer& buffer, IndexFormat format, size_t bufferOffset) override;
 
   /// @brief Not implemented
   void bindBytes(size_t index, uint8_t target, const void* data, size_t length) override;
@@ -66,48 +66,40 @@ class RenderCommandEncoder : public IRenderCommandEncoder {
   void bindSamplerState(size_t index, uint8_t target, ISamplerState* samplerState) override;
 
   void bindTexture(size_t index, uint8_t target, ITexture* texture) override;
+  void bindTexture(size_t index, ITexture* texture) override;
 
   /// @brief This is only for backends that MUST use single uniforms in some situations. Do not
   /// implement!
   void bindUniform(const UniformDesc& uniformDesc, const void* data) override;
 
-  void draw(PrimitiveType primitiveType,
-            size_t vertexStart,
-            size_t vertexCount,
+  void bindBindGroup(BindGroupTextureHandle handle) override;
+  void bindBindGroup(BindGroupBufferHandle handle,
+                     uint32_t numDynamicOffsets = 0,
+                     const uint32_t* dynamicOffsets = nullptr) override;
+
+  void draw(size_t vertexCount,
             uint32_t instanceCount,
+            uint32_t firstVertex,
             uint32_t baseInstance) override;
-  void drawIndexed(PrimitiveType primitiveType,
-                   size_t indexCount,
-                   IndexFormat indexFormat,
-                   IBuffer& indexBuffer,
-                   size_t indexBufferOffset,
+  void drawIndexed(size_t indexCount,
                    uint32_t instanceCount,
-                   int32_t baseVertex,
+                   uint32_t firstIndex,
+                   int32_t vertexOffset,
                    uint32_t baseInstance) override;
-  void drawIndexedIndirect(PrimitiveType primitiveType,
-                           IndexFormat indexFormat,
-                           IBuffer& indexBuffer,
-                           IBuffer& indirectBuffer,
-                           size_t indirectBufferOffset) override;
-  void multiDrawIndirect(PrimitiveType primitiveType,
-                         IBuffer& indirectBuffer,
+  void multiDrawIndirect(IBuffer& indirectBuffer,
                          size_t indirectBufferOffset,
                          uint32_t drawCount,
                          uint32_t stride = 0) override;
-  void multiDrawIndexedIndirect(PrimitiveType primitiveType,
-                                IndexFormat indexFormat,
-                                IBuffer& indexBuffer,
-                                IBuffer& indirectBuffer,
+  void multiDrawIndexedIndirect(IBuffer& indirectBuffer,
                                 size_t indirectBufferOffset,
                                 uint32_t drawCount,
                                 uint32_t stride = 0) override;
 
   void setStencilReferenceValue(uint32_t value) override;
-  void setStencilReferenceValues(uint32_t frontValue, uint32_t backValue) override;
-  void setBlendColor(Color color) override;
+  void setBlendColor(const Color& color) override;
   void setDepthBias(float depthBias, float slopeScale, float clamp) override;
 
-  VkCommandBuffer getVkCommandBuffer() const {
+  [[nodiscard]] VkCommandBuffer getVkCommandBuffer() const {
     return cmdBuffer_;
   }
 
@@ -120,6 +112,11 @@ class RenderCommandEncoder : public IRenderCommandEncoder {
   /// draw calls such as shader debugging.
   bool setDrawCallCountEnabled(bool value);
 
+  void blitColorImage(const igl::vulkan::VulkanImage& srcImage,
+                      const igl::vulkan::VulkanImage& destImage,
+                      const igl::TextureRangeDesc& srcRange,
+                      const igl::TextureRangeDesc& destRange);
+
  private:
   RenderCommandEncoder(const std::shared_ptr<CommandBuffer>& commandBuffer, VulkanContext& ctx);
 
@@ -131,7 +128,8 @@ class RenderCommandEncoder : public IRenderCommandEncoder {
   void initialize(const RenderPassDesc& renderPass,
                   const std::shared_ptr<IFramebuffer>& framebuffer,
                   const Dependencies& dependencies,
-                  Result* outResult);
+                  Result& outResult);
+  void processDependencies(const Dependencies& dependencies);
 
  private:
   VulkanContext& ctx_;
@@ -149,11 +147,15 @@ class RenderCommandEncoder : public IRenderCommandEncoder {
    *  1: All other times */
   uint32_t drawCallCountEnabled_ = 1u;
 
-  bool isVertexBufferBound_[IGL_VERTEX_BUFFER_MAX] = {};
+  bool isVertexBufferBound_[IGL_BUFFER_BINDINGS_MAX] = {};
 
   Dependencies dependencies_ = {};
 
   const igl::vulkan::RenderPipelineState* rps_ = nullptr;
+  igl::BindGroupTextureHandle pendingBindGroupTexture_ = {};
+  igl::BindGroupBufferHandle pendingBindGroupBuffer_ = {};
+  uint32_t numDynamicOffsets_ = 0;
+  uint32_t dynamicOffsets_[IGL_UNIFORM_BLOCKS_BINDING_MAX] = {};
 };
 
 } // namespace igl::vulkan

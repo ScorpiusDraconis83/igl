@@ -35,15 +35,15 @@ bool isAligned(const void* p) {
 }
 namespace {
 uint32_t iglCrc32ImplARM8(const char* s, uint32_t crc, size_t length) {
-  for (; !isAligned<uint32_t>(s) && length > 0; s++, length--) {
+  for (; !isAligned<uint64_t>(s) && length > 0; s++, length--) {
     crc = __crc32b(crc, *s);
   }
 
-  for (; length > 8; s += 8, length -= 8) {
+  for (; length >= 8; s += 8, length -= 8) {
     crc = __crc32d(crc, *(const uint64_t*)(s));
   }
 
-  for (; length > 4; s += 4, length -= 4) {
+  for (; length >= 4; s += 4, length -= 4) {
     crc = __crc32w(crc, *(const uint32_t*)(s));
   }
 
@@ -65,7 +65,7 @@ bool detectCrc32() {
   return hwcaps & HWCAP_CRC32 ? true : false;
 }
 } // namespace
-#elif IGL_PLATFORM_APPLE || IGL_PLATFORM_IOS || IGL_PLATFORM_MACOS
+#elif IGL_PLATFORM_APPLE || IGL_PLATFORM_IOS || IGL_PLATFORM_MACOSX
 namespace {
 bool detectCrc32() {
   // All iphones6+ are support it
@@ -95,13 +95,13 @@ uint32_t igl::iglCrc32(const char* data, size_t /*length*/) {
 #if IGL_DEBUG
 namespace igl {
 bool NameHandle::checkIsValidCrcCompare(const NameHandle& nh) const {
-  bool res = nh.crc32_ == crc32_ && nh.name_ != name_;
-  IGL_ASSERT_MSG(!res,
-                 "NameHandle CRC check fails: name1 (%s %x) name2 (%s %x)\n",
-                 name_.c_str(),
-                 crc32_,
-                 nh.name_.c_str(),
-                 nh.crc32_);
+  const bool res = nh.crc32_ == crc32_ && nh.name_ != name_;
+  IGL_DEBUG_ASSERT(!res,
+                   "NameHandle CRC check fails: name1 (%s %x) name2 (%s %x)\n",
+                   name_.c_str(),
+                   crc32_,
+                   nh.name_.c_str(),
+                   nh.crc32_);
 
   return res;
 }
@@ -109,7 +109,7 @@ bool NameHandle::checkIsValidCrcCompare(const NameHandle& nh) const {
 #endif // IGL_DEBUG
 
 size_t std::hash<std::vector<igl::NameHandle>>::operator()(
-    std::vector<igl::NameHandle> const& key) const {
+    const std::vector<igl::NameHandle>& key) const {
   size_t hash = 0;
   for (const auto& elem : key) {
     hash ^= std::hash<uint32_t>()(elem.getCrc32());

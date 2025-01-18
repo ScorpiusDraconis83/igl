@@ -5,12 +5,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @MARK:COVERAGE_EXCLUDE_FILE
+
 #include "Drawable.h"
 
 #include <utility>
 
-namespace iglu {
-namespace drawable {
+namespace iglu::drawable {
 
 Drawable::Drawable(std::shared_ptr<vertexdata::VertexData> vertexData,
                    std::shared_ptr<material::Material> material) :
@@ -22,7 +23,7 @@ void Drawable::draw(igl::IDevice& device,
                     size_t pushConstantsDataSize,
                     const void* pushConstantsData) {
   // Assumption: _vertexData and _material are immutable
-  size_t pipelineDescHash = std::hash<igl::RenderPipelineDesc>()(pipelineDesc);
+  const size_t pipelineDescHash = std::hash<igl::RenderPipelineDesc>()(pipelineDesc);
   if (!_pipelineState || pipelineDescHash != _lastPipelineDescHash) {
     igl::RenderPipelineDesc mutablePipelineDesc = pipelineDesc;
     _vertexData->populatePipelineDescriptor(mutablePipelineDesc);
@@ -43,5 +44,4 @@ void Drawable::draw(igl::IDevice& device,
   _vertexData->draw(commandEncoder);
 }
 
-} // namespace drawable
-} // namespace iglu
+} // namespace iglu::drawable

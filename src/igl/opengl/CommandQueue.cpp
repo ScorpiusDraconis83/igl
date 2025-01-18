@@ -10,20 +10,18 @@
 #include <igl/Texture.h>
 #include <igl/opengl/CommandBuffer.h>
 #include <igl/opengl/Device.h>
-#include <igl/opengl/Errors.h>
 #include <igl/opengl/IContext.h>
 #include <igl/opengl/RenderPipelineState.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
-void CommandQueue::setInitialContext(std::shared_ptr<IContext> context) {
-  context_ = std::move(context);
+void CommandQueue::setInitialContext(const std::shared_ptr<IContext>& context) {
+  context_ = context;
 }
 
 std::shared_ptr<ICommandBuffer> CommandQueue::createCommandBuffer(const CommandBufferDesc& /*desc*/,
                                                                   Result* outResult) {
-  //  IGL_ASSERT_MSG(
+  //  IGL_DEBUG_ASSERT(
   //      activeCommandBuffers_ == 0,
   //      "OpenGL does not currently support creating multiple commandBuffers at the same time");
   if (context_ == nullptr) {
@@ -47,5 +45,4 @@ SubmitHandle CommandQueue::submit(const ICommandBuffer& commandBuffer, bool /* e
   return SubmitHandle{};
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

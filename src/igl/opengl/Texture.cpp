@@ -8,21 +8,19 @@
 #include <igl/opengl/Texture.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <igl/opengl/CommandBuffer.h>
 #include <igl/opengl/Device.h>
 #include <igl/opengl/Errors.h>
 #include <igl/opengl/util/TextureFormat.h>
 
-namespace igl {
-namespace opengl {
+namespace igl::opengl {
 
 Dimensions Texture::getDimensions() const {
   return Dimensions{
-      static_cast<size_t>(width_), static_cast<size_t>(height_), static_cast<size_t>(depth_)};
+      static_cast<uint32_t>(width_), static_cast<uint32_t>(height_), static_cast<uint32_t>(depth_)};
 }
 
-size_t Texture::getNumLayers() const {
+uint32_t Texture::getNumLayers() const {
   return numLayers_;
 }
 
@@ -30,12 +28,14 @@ uint32_t Texture::getSamples() const {
   return numSamples_;
 }
 
-void Texture::generateMipmap(ICommandQueue& /* unused */) const {
-  IGL_ASSERT_MSG(0, "Can only generate mipmap for R/W texture (eg. TextureBuffer).");
+void Texture::generateMipmap(ICommandQueue& /* unused */,
+                             const TextureRangeDesc* IGL_NULLABLE /* unused */) const {
+  IGL_DEBUG_ABORT("Can only generate mipmap for R/W texture (eg. TextureBuffer).");
 }
 
-void Texture::generateMipmap(ICommandBuffer& /* unused */) const {
-  IGL_ASSERT_MSG(0, "Can only generate mipmap for R/W texture (eg. TextureBuffer).");
+void Texture::generateMipmap(ICommandBuffer& /* unused */,
+                             const TextureRangeDesc* IGL_NULLABLE /* unused */) const {
+  IGL_DEBUG_ABORT("Can only generate mipmap for R/W texture (eg. TextureBuffer).");
 }
 
 uint32_t Texture::getNumMipLevels() const {
@@ -48,7 +48,7 @@ bool Texture::isRequiredGenerateMipmap() const {
 
 uint64_t Texture::getTextureId() const {
   // this requires ARB_bindless_texture
-  IGL_ASSERT_NOT_IMPLEMENTED();
+  IGL_DEBUG_ASSERT_NOT_IMPLEMENTED();
   return 0;
 }
 
@@ -62,9 +62,9 @@ Result Texture::create(const TextureDesc& desc, bool hasStorageAlready) {
     return Result{Result::Code::Unsupported,
                   "Array textures are only supported when type is TwoDArray."};
   }
-  if (IGL_VERIFY(!isCreated_)) {
+  if (IGL_DEBUG_VERIFY(!isCreated_)) {
     isCreated_ = true;
-    IGL_ASSERT(desc.format != TextureFormat::Invalid && desc.format == getFormat());
+    IGL_DEBUG_ASSERT(desc.format != TextureFormat::Invalid && desc.format == getFormat());
     const bool isSampled = (desc.usage & TextureDesc::TextureUsageBits::Sampled) != 0;
 
     if (isSampled && hasStorageAlready) {
@@ -101,19 +101,24 @@ Result Texture::create(const TextureDesc& desc, bool hasStorageAlready) {
 // openGL only uses alignment instead of stride when reading/writing pixels so it will not support
 // padding that is not 8, 4, 2, or 1 byte aligned to the actual pixel data
 
-GLint Texture::getAlignment(size_t stride, size_t mipLevel) const {
-  IGL_ASSERT(mipLevel < numMipLevels_);
+GLint Texture::getAlignment(uint32_t stride, uint32_t mipLevel, uint32_t widthAtMipLevel) const {
+  IGL_DEBUG_ASSERT(mipLevel < numMipLevels_);
 
   if (getProperties().isCompressed()) {
     return 1;
   }
 
   // Clamp to 1 to account for non-square textures.
-  const auto srcWidth = std::max(getDimensions().width >> mipLevel, static_cast<size_t>(1));
+  const auto maxWidthAtMipLevel = std::max(getDimensions().width >> mipLevel, 1u);
+  if (widthAtMipLevel == 0) {
+    widthAtMipLevel = maxWidthAtMipLevel;
+  } else if (IGL_DEBUG_VERIFY_NOT(widthAtMipLevel > maxWidthAtMipLevel)) {
+    widthAtMipLevel = maxWidthAtMipLevel;
+  }
 
-  const auto pixelBytesPerRow = getProperties().getBytesPerRow(srcWidth);
+  const auto pixelBytesPerRow = getProperties().getBytesPerRow(widthAtMipLevel);
 
-  if (stride == 0 || !IGL_VERIFY(pixelBytesPerRow <= stride)) {
+  if (stride == 0 || !IGL_DEBUG_VERIFY(pixelBytesPerRow <= stride)) {
     return 1;
   } else if (stride % 8 == 0) {
     return 8;
@@ -154,7 +159,7 @@ GLenum Texture::toGLTarget(TextureType type) const {
   case TextureType::Invalid:
     break;
   }
-  IGL_ASSERT_MSG(0, "Unsupported OGL Texture Type: %d", type);
+  IGL_DEBUG_ABORT("Unsupported OGL Texture Type: %d", type);
 
   return 0;
 }
@@ -177,7 +182,7 @@ bool Texture::toFormatDescGL(TextureFormat textureFormat,
                              FormatDescGL& outFormatGL) const {
   return toFormatDescGL(getContext(), textureFormat, usage, outFormatGL);
 }
-bool Texture::toFormatDescGL(IContext& ctx,
+bool Texture::toFormatDescGL(const IContext& ctx,
                              TextureFormat textureFormat,
                              TextureDesc::TextureUsage usage,
                              FormatDescGL& outFormatGL) {
@@ -203,9 +208,9 @@ bool Texture::toFormatDescGL(IContext& ctx,
     }
   }
 
-  bool sampled = (usage & TextureDesc::TextureUsageBits::Sampled) != 0;
+  const bool sampled = (usage & TextureDesc::TextureUsageBits::Sampled) != 0;
   bool attachment = (usage & TextureDesc::TextureUsageBits::Attachment) != 0;
-  bool storage = (usage & TextureDesc::TextureUsageBits::Storage) != 0;
+  const bool storage = (usage & TextureDesc::TextureUsageBits::Storage) != 0;
   bool sampledAttachment = sampled && attachment;
   bool sampledOnly = sampled && !attachment;
   bool attachmentOnly = attachment && !sampled;
@@ -492,6 +497,15 @@ bool Texture::toFormatDescGL(IContext& ctx,
     }
     internalFormat = GL_RG16F;
     if (texImage && !deviceFeatures.hasTextureFeature(TextureFeatures::ColorTexImage16f)) {
+      internalFormat = GL_RG;
+    }
+    return true;
+
+  case TextureFormat::RG_F32:
+    format = GL_RG;
+    type = GL_FLOAT;
+    internalFormat = GL_RG32F;
+    if (texImage && !deviceFeatures.hasTextureFeature(TextureFeatures::ColorTexImage32f)) {
       internalFormat = GL_RG;
     }
     return true;
@@ -902,10 +916,12 @@ bool Texture::toFormatDescGL(IContext& ctx,
       internalFormat = GL_DEPTH_STENCIL;
     }
     return true;
+  case TextureFormat::YUV_NV12:
+  case TextureFormat::YUV_420p:
+    return false;
   }
 
   return false;
 }
 
-} // namespace opengl
-} // namespace igl
+} // namespace igl::opengl

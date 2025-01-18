@@ -18,7 +18,8 @@ TEST_F(TextureTest, Upload) {
   const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
                                                  kOffscreenTexWidth,
                                                  kOffscreenTexHeight,
-                                                 TextureDesc::TextureUsageBits::Sampled);
+                                                 TextureDesc::TextureUsageBits::Sampled |
+                                                     TextureDesc::TextureUsageBits::Attachment);
   inputTexture_ = iglDev_->createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(inputTexture_ != nullptr);
@@ -47,10 +48,10 @@ TEST_F(TextureTest, Passthrough) {
   //-------------------------------------
   // Create input texture and upload data
   //-------------------------------------
-  TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                           kOffscreenTexWidth,
-                                           kOffscreenTexHeight,
-                                           TextureDesc::TextureUsageBits::Sampled);
+  const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                 kOffscreenTexWidth,
+                                                 kOffscreenTexHeight,
+                                                 TextureDesc::TextureUsageBits::Sampled);
   inputTexture_ = iglDev_->createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(inputTexture_ != nullptr);
@@ -74,15 +75,16 @@ TEST_F(TextureTest, Passthrough) {
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
 
@@ -111,10 +113,10 @@ TEST_F(TextureTest, PassthroughSubTexture) {
   //------------------------------------------------------
   // Create input texture and sub-texture, and upload data
   //------------------------------------------------------
-  TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
-                                           kOffscreenTexWidth,
-                                           kOffscreenTexHeight,
-                                           TextureDesc::TextureUsageBits::Sampled);
+  const TextureDesc texDesc = TextureDesc::new2D(TextureFormat::RGBA_UNorm8,
+                                                 kOffscreenTexWidth,
+                                                 kOffscreenTexHeight,
+                                                 TextureDesc::TextureUsageBits::Sampled);
   inputTexture_ = iglDev_->createTexture(texDesc, &ret);
   ASSERT_EQ(ret.code, Result::Code::Ok);
   ASSERT_TRUE(inputTexture_ != nullptr);
@@ -145,15 +147,16 @@ TEST_F(TextureTest, PassthroughSubTexture) {
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
 
@@ -197,14 +200,14 @@ TEST_F(TextureTest, FBCopy) {
                                            TextureDesc::TextureUsageBits::Sampled);
   texDesc.debugName = "Texture: TextureTest::FBCopy::dstTexture";
   dstTexture = iglDev_->createTexture(texDesc, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(dstTexture != nullptr);
 
   //----------------
   // Create Pipeline
   //----------------
   pipelineState = iglDev_->createRenderPipeline(renderPipelineDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
   ASSERT_TRUE(pipelineState != nullptr);
 
   //---------------------------------
@@ -213,15 +216,16 @@ TEST_F(TextureTest, FBCopy) {
   renderPass_.colorAttachments[0].clearColor = {0.501f, 0.501f, 0.501f, 0.501f};
 
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
 
   auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
   cmds->bindRenderPipelineState(pipelineState);
 
   // draw 0 indices here just to clear the FB
-  cmds->drawIndexed(PrimitiveType::Triangle, 0, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(0);
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -245,13 +249,14 @@ TEST_F(TextureTest, FBCopy) {
   renderPass_.colorAttachments[0].clearColor = {0, 0, 0, 0};
 
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
 
   cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
   cmds->bindRenderPipelineState(pipelineState);
-  cmds->drawIndexed(PrimitiveType::Triangle, 0, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(0);
   cmds->endEncoding();
 
   cmdQueue_->submit(*cmdBuf_);
@@ -268,11 +273,11 @@ TEST_F(TextureTest, FBCopy) {
   // Copy dstTexture to FB so we can read it back
   //---------------------------------------------
   cmdBuf_ = cmdQueue_->createCommandBuffer(cbDesc_, &ret);
-  ASSERT_TRUE(ret.isOk());
+  ASSERT_TRUE(ret.isOk()) << ret.message.c_str();
 
   cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, framebuffer_);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
@@ -280,7 +285,8 @@ TEST_F(TextureTest, FBCopy) {
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, dstTexture.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
 
@@ -507,15 +513,16 @@ TEST_F(TextureTest, UploadAlignment) {
     ASSERT_TRUE(cmdBuf_ != nullptr);
 
     auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, customFramebuffer);
-    cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-    cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+    cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+    cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
     cmds->bindRenderPipelineState(pipelineState);
 
     cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
     cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-    cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+    cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+    cmds->drawIndexed(6);
 
     cmds->endEncoding();
 
@@ -602,15 +609,16 @@ TEST_F(TextureTest, Resize) {
   ASSERT_TRUE(cmdBuf_ != nullptr);
 
   auto cmds = cmdBuf_->createRenderCommandEncoder(renderPass_, fb);
-  cmds->bindBuffer(data::shader::simplePosIndex, BindTarget::kVertex, vb_, 0);
-  cmds->bindBuffer(data::shader::simpleUvIndex, BindTarget::kVertex, uv_, 0);
+  cmds->bindVertexBuffer(data::shader::simplePosIndex, *vb_);
+  cmds->bindVertexBuffer(data::shader::simpleUvIndex, *uv_);
 
   cmds->bindRenderPipelineState(pipelineState);
 
   cmds->bindTexture(textureUnit_, BindTarget::kFragment, inputTexture_.get());
   cmds->bindSamplerState(textureUnit_, BindTarget::kFragment, samp_.get());
 
-  cmds->drawIndexed(PrimitiveType::Triangle, 6, IndexFormat::UInt16, *ib_, 0);
+  cmds->bindIndexBuffer(*ib_, IndexFormat::UInt16);
+  cmds->drawIndexed(6);
 
   cmds->endEncoding();
 
